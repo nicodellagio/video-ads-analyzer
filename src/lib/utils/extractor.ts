@@ -217,9 +217,17 @@ export async function extractFacebookVideo(url: string): Promise<VideoMetadata> 
   }
   
   try {
-    // En environnement serverless (Vercel), utiliser Cloudinary via proxy
-    if (isServerless) {
-      console.log('Utilisation de Cloudinary pour l\'extraction de vidéo Facebook en environnement serverless');
+    // Vérifier si l'URL est une URL Facebook Ads Library ou Ads Archive
+    const isAdsLibraryUrl = url.includes('facebook.com/ads/library');
+    const isAdsArchiveUrl = url.includes('facebook.com/ads/archive/render_ad');
+    
+    // Utiliser RapidAPI pour les URLs Ads Library/Archive, même en mode local
+    if (isServerless || isAdsLibraryUrl || isAdsArchiveUrl) {
+      console.log('Utilisation de RapidAPI pour l\'extraction de vidéo Facebook');
+      
+      if (isAdsLibraryUrl) {
+        console.log('URL Facebook Ads Library détectée, utilisation du proxy pour extraction');
+      }
       
       // Générer un ID unique pour la vidéo
       const videoId = uuidv4();
@@ -299,12 +307,14 @@ export async function extractInstagramVideo(url: string): Promise<VideoMetadata>
   }
   
   try {
-    // En environnement serverless (Vercel), utiliser Cloudinary
-    if (isServerless) {
-      console.log('Utilisation de Cloudinary pour l\'extraction de vidéo Instagram en environnement serverless');
+    // Déterminer si l'URL est une URL Instagram standard (pas un CDN)
+    const isStandardInstagramUrl = url.includes('instagram.com') && !url.includes('cdninstagram.com');
+    
+    // Utiliser RapidAPI pour les URLs Instagram, même en mode local
+    if (isServerless || isStandardInstagramUrl) {
+      console.log('Utilisation de RapidAPI pour l\'extraction de vidéo Instagram');
       
-      // Vérifier si l'URL est une URL Instagram qui nécessite une authentification
-      if (url.includes('instagram.com') && !url.includes('cdninstagram.com')) {
+      if (isStandardInstagramUrl) {
         console.log('URL Instagram standard détectée, utilisation du proxy pour extraction');
       }
       

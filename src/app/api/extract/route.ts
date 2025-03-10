@@ -35,27 +35,47 @@ export async function POST(request: NextRequest) {
     if (source === 'meta' && url.includes('facebook.com/ads/library')) {
       console.log('URL Facebook Ads Library détectée, tentative d\'extraction via RapidAPI');
       
-      // Extraire l'ID de l'annonce (format: facebook.com/ads/library/?id=XXXXXX)
-      let adId = '';
       try {
-        const urlObj = new URL(url);
-        adId = urlObj.searchParams.get('id') || '';
+        // Utiliser l'approche direct-extract pour ce type d'URL
+        const response = await fetch(`${request.nextUrl.origin}/api/direct-extract`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ url, source }),
+        });
         
-        if (!adId) {
+        if (!response.ok) {
+          throw new Error(`Échec de l'appel à direct-extract: ${response.status}`);
+        }
+        
+        const result = await response.json();
+        return NextResponse.json(result);
+      } catch (error) {
+        console.error('Erreur lors de la redirection vers direct-extract:', error);
+        
+        // Extraire l'ID de l'annonce (format: facebook.com/ads/library/?id=XXXXXX)
+        let adId = '';
+        try {
+          const urlObj = new URL(url);
+          adId = urlObj.searchParams.get('id') || '';
+          
+          if (!adId) {
+            return NextResponse.json(
+              { error: 'Impossible d\'extraire l\'ID de l\'annonce depuis l\'URL' },
+              { status: 400 }
+            );
+          }
+          
+          // Remplacer l'URL par l'URL directe de Facebook Ads Archive
+          url = `https://www.facebook.com/ads/archive/render_ad/?id=${adId}`;
+          console.log('URL transformée pour extraction:', url);
+        } catch (error) {
           return NextResponse.json(
-            { error: 'Impossible d\'extraire l\'ID de l\'annonce depuis l\'URL' },
+            { error: 'URL Facebook Ads Library invalide' },
             { status: 400 }
           );
         }
-        
-        // Remplacer l'URL par l'URL directe de Facebook Ads Archive
-        url = `https://www.facebook.com/ads/archive/render_ad/?id=${adId}`;
-        console.log('URL transformée pour extraction:', url);
-      } catch (error) {
-        return NextResponse.json(
-          { error: 'URL Facebook Ads Library invalide' },
-          { status: 400 }
-        );
       }
     }
 
