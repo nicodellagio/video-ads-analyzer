@@ -20,6 +20,10 @@ const nextConfig = {
   typescript: {
     ignoreBuildErrors: true,
   },
+  // Configuration pour Vercel
+  env: {
+    VERCEL_ENV: process.env.VERCEL_ENV || 'development',
+  },
   webpack: (config, { isServer }) => {
     // Ajouter un fallback pour les modules qui utilisent le browser globals
     if (!isServer) {
