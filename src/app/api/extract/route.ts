@@ -30,14 +30,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Vérifier si l'URL est une URL Facebook Ads Library
-    if (source === 'meta' && url.includes('facebook.com/ads/library')) {
-      return NextResponse.json(
-        { error: 'Les URLs Facebook Ads Library ne sont pas directement supportées. Veuillez utiliser l\'URL directe de la vidéo.' },
-        { status: 400 }
-      );
-    }
-
     // Extract video based on source
     try {
       let videoMetadata;
