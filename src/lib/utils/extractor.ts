@@ -5,7 +5,7 @@ import { ensureUploadDir, extractVideoMetadata, UPLOAD_DIR, UPLOAD_URL_PATH } fr
 import { getFacebookVideoInfo, getInstagramVideoInfo } from './meta-api';
 import type { VideoMetadata } from './video';
 import { isServerless } from '@/lib/config/environment';
-import { uploadVideoFromUrl, formatFileSize } from '@/lib/services/cloudinary';
+import { uploadVideoFromUrl, uploadVideoFromUrlViaProxy, formatFileSize } from '@/lib/services/cloudinary';
 
 // Types de sources vidéo supportées
 export type VideoSource = 'instagram' | 'meta' | 'youtube' | 'tiktok';
@@ -52,11 +52,23 @@ export async function extractVideoFromUrl(options: ExtractionOptions): Promise<V
       // Générer un ID unique pour la vidéo
       const videoId = uuidv4();
       
-      // Uploader la vidéo vers Cloudinary
-      const cloudinaryResult = await uploadVideoFromUrl(url, {
-        public_id: videoId,
-        folder: 'video-ads'
-      });
+      // Déterminer si nous devons utiliser le proxy ou l'upload direct
+      let cloudinaryResult;
+      
+      // Pour les URLs qui nécessitent une extraction (Facebook, Instagram, etc.)
+      if (source === 'meta' || source === 'instagram' || source === 'youtube' || source === 'tiktok') {
+        console.log('Utilisation du proxy pour extraire la vidéo');
+        cloudinaryResult = await uploadVideoFromUrlViaProxy(url, source, {
+          public_id: videoId,
+          folder: `video-ads-${source}`
+        });
+      } else {
+        // Pour les URLs directes
+        cloudinaryResult = await uploadVideoFromUrl(url, {
+          public_id: videoId,
+          folder: 'video-ads'
+        });
+      }
       
       // Convertir le résultat au format VideoMetadata
       return {
@@ -211,14 +223,14 @@ export async function extractFacebookVideo(url: string): Promise<VideoMetadata> 
       
       // Vérifier si l'URL est une URL Facebook Ads Library
       if (url.includes('facebook.com/ads/library')) {
-        throw new Error('Les URLs Facebook Ads Library ne sont pas directement supportées. Veuillez utiliser l\'URL directe de la vidéo.');
+        console.log('URL Facebook Ads Library détectée, utilisation du proxy pour extraction');
       }
       
       // Générer un ID unique pour la vidéo
       const videoId = uuidv4();
       
-      // Uploader la vidéo vers Cloudinary
-      const cloudinaryResult = await uploadVideoFromUrl(url, {
+      // Utiliser le proxy pour extraire la vidéo Facebook
+      const cloudinaryResult = await uploadVideoFromUrlViaProxy(url, 'facebook', {
         public_id: videoId,
         folder: 'video-ads-facebook'
       });
@@ -298,20 +310,14 @@ export async function extractInstagramVideo(url: string): Promise<VideoMetadata>
       
       // Vérifier si l'URL est une URL Instagram qui nécessite une authentification
       if (url.includes('instagram.com') && !url.includes('cdninstagram.com')) {
-        // Essayer d'extraire l'URL directe de la vidéo si possible
-        try {
-          // Si nous ne pouvons pas extraire l'URL directe, informer l'utilisateur
-          console.log('Tentative d\'extraction directe depuis Instagram...');
-        } catch (error) {
-          console.error('Erreur lors de l\'extraction de l\'URL directe:', error);
-        }
+        console.log('URL Instagram standard détectée, utilisation du proxy pour extraction');
       }
       
       // Générer un ID unique pour la vidéo
       const videoId = uuidv4();
       
-      // Uploader la vidéo vers Cloudinary
-      const cloudinaryResult = await uploadVideoFromUrl(url, {
+      // Utiliser le proxy pour extraire la vidéo Instagram
+      const cloudinaryResult = await uploadVideoFromUrlViaProxy(url, 'instagram', {
         public_id: videoId,
         folder: 'video-ads-instagram'
       });
