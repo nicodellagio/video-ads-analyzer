@@ -3,14 +3,15 @@ const nextConfig = {
   // Augmenter la taille maximale des assets statiques
   experimental: {
     largePageDataBytes: 128 * 1000, // 128KB
-    serverComponentsExternalPackages: [
-      'fluent-ffmpeg',
-      '@ffprobe-installer/ffprobe',
-      'child_process',
-      '@ffmpeg-installer/ffmpeg',
-      'got'
-    ]
   },
+  // Packages externes pour les composants serveur
+  serverExternalPackages: [
+    'fluent-ffmpeg',
+    '@ffprobe-installer/ffprobe',
+    'child_process',
+    '@ffmpeg-installer/ffmpeg',
+    'got'
+  ],
   // Désactiver le linting lors du build
   eslint: {
     ignoreDuringBuilds: true,
