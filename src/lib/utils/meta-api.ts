@@ -6,6 +6,7 @@
 import { got } from 'got';
 import { join } from 'path';
 import { v4 as uuidv4 } from 'uuid';
+import { isServerless } from '@/lib/config/environment';
 
 // Types for API responses
 interface MetaApiResponse {
@@ -23,6 +24,90 @@ interface MetaVideoInfo {
   duration?: number; // in seconds
   width?: number;
   height?: number;
+}
+
+/**
+ * Extracts a video from a URL using SaveFrom.net
+ * @param url URL of the video to extract
+ * @returns Information about the extracted video
+ */
+async function extractVideoWithSaveFrom(url: string): Promise<MetaVideoInfo> {
+  try {
+    console.log(`Attempting extraction with SaveFrom.net for: ${url}`);
+    
+    // Generate a unique ID for the video
+    const videoId = uuidv4();
+    
+    // Use SaveFrom.net API to extract the video URL
+    const saveFromUrl = `https://worker.sf-tools.com/savefrom.php?url=${encodeURIComponent(url)}`;
+    
+    console.log(`Calling SaveFrom.net API: ${saveFromUrl}`);
+    
+    const response = await fetch(saveFromUrl, {
+      method: 'GET',
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+        'Accept': 'application/json',
+        'Origin': 'https://en.savefrom.net',
+        'Referer': 'https://en.savefrom.net/'
+      }
+    });
+    
+    if (!response.ok) {
+      throw new Error(`SaveFrom.net API error: ${response.status} ${response.statusText}`);
+    }
+    
+    const data = await response.json();
+    console.log('SaveFrom.net response:', data);
+    
+    // Extract the video URL from the response
+    let videoUrl = null;
+    
+    if (data && data.url) {
+      videoUrl = data.url;
+    } else if (data && data.urls && data.urls.length > 0) {
+      // Take the URL with the best quality
+      const bestUrl = data.urls.sort((a, b) => (b.quality || 0) - (a.quality || 0))[0];
+      videoUrl = bestUrl.url;
+    } else if (data && data.info && data.info.url) {
+      videoUrl = data.info.url;
+    } else if (data && data.links && data.links.length > 0) {
+      // Take the URL with the best quality
+      const bestLink = data.links.sort((a, b) => (b.quality || 0) - (a.quality || 0))[0];
+      videoUrl = bestLink.url || bestLink.link || bestLink.hd || bestLink.sd;
+    }
+    
+    if (!videoUrl) {
+      throw new Error('Could not extract video URL from SaveFrom.net response');
+    }
+    
+    console.log(`Extracted video URL: ${videoUrl}`);
+    
+    // Create the MetaVideoInfo object
+    const videoInfo: MetaVideoInfo = {
+      id: videoId,
+      url: videoUrl,
+      title: data.title || `Video extracted from ${url}`,
+      description: data.description || '',
+      thumbnail_url: data.thumbnail || '',
+      duration: data.duration || 0,
+      width: data.width || 1280,
+      height: data.height || 720
+    };
+    
+    console.log('Extracted metadata:', {
+      id: videoInfo.id,
+      title: videoInfo.title,
+      duration: videoInfo.duration,
+      width: videoInfo.width,
+      height: videoInfo.height
+    });
+    
+    return videoInfo;
+  } catch (error) {
+    console.error('Error during extraction with SaveFrom.net:', error);
+    throw new Error(`Error during extraction with SaveFrom.net: ${(error as Error).message}`);
+  }
 }
 
 /**
@@ -203,9 +288,16 @@ async function extractVideoWithYoutubeDl(url: string): Promise<MetaVideoInfo> {
  */
 export async function getFacebookVideoInfo(url: string): Promise<MetaApiResponse> {
   try {
-    // Use yt-dlp to extract the video
-    const videoInfo = await extractVideoWithYoutubeDl(url);
-    return { success: true, data: videoInfo };
+    // Check if we're in a serverless environment
+    if (isServerless) {
+      // Use SaveFrom.net to extract the video
+      const videoInfo = await extractVideoWithSaveFrom(url);
+      return { success: true, data: videoInfo };
+    } else {
+      // Use yt-dlp to extract the video
+      const videoInfo = await extractVideoWithYoutubeDl(url);
+      return { success: true, data: videoInfo };
+    }
   } catch (error) {
     console.error('Error retrieving Facebook video:', error);
     return { success: false, error: (error as Error).message };
@@ -219,9 +311,16 @@ export async function getFacebookVideoInfo(url: string): Promise<MetaApiResponse
  */
 export async function getInstagramVideoInfo(url: string): Promise<MetaApiResponse> {
   try {
-    // Use yt-dlp to extract the video
-    const videoInfo = await extractVideoWithYoutubeDl(url);
-    return { success: true, data: videoInfo };
+    // Check if we're in a serverless environment
+    if (isServerless) {
+      // Use SaveFrom.net to extract the video
+      const videoInfo = await extractVideoWithSaveFrom(url);
+      return { success: true, data: videoInfo };
+    } else {
+      // Use yt-dlp to extract the video
+      const videoInfo = await extractVideoWithYoutubeDl(url);
+      return { success: true, data: videoInfo };
+    }
   } catch (error) {
     console.error('Error retrieving Instagram video:', error);
     return { success: false, error: (error as Error).message };
@@ -249,29 +348,20 @@ export async function downloadVideo(videoUrl: string, outputPath: string): Promi
     return new Promise((resolve, reject) => {
       stream.pipe(writeStream);
       stream.on('error', (error) => {
-        console.error('Error during video download:', error);
+        console.error('Error downloading video:', error);
         reject(error);
       });
       writeStream.on('finish', () => {
-        console.log(`Video downloaded successfully to ${outputPath}`);
+        console.log(`Video downloaded to ${outputPath}`);
         resolve(true);
       });
       writeStream.on('error', (error) => {
-        console.error('Error during video writing:', error);
+        console.error('Error writing video file:', error);
         reject(error);
       });
     });
   } catch (error) {
-    console.error('Error during video download:', error);
-    try {
-      const { writeFile } = await import('fs/promises');
-      const dummyContent = Buffer.from('Video factice downloaded from ' + videoUrl);
-      await writeFile(outputPath, dummyContent);
-      console.log(`Dummy file created at ${outputPath} due to download error`);
-      return true;
-    } catch (writeError) {
-      console.error('Error during dummy file creation:', writeError);
-      return false;
-    }
+    console.error('Error downloading video:', error);
+    return false;
   }
 } 
