@@ -25,10 +25,23 @@ export async function uploadVideoFromUrl(url: string, options: any = {}) {
   try {
     console.log(`Uploading video from URL to Cloudinary: ${url}`);
     
-    const result = await cloudinary.uploader.upload(url, {
+    // Vérifier si l'URL est valide
+    if (!url || typeof url !== 'string' || !url.startsWith('http')) {
+      throw new Error(`URL invalide: ${url}`);
+    }
+    
+    // Ajouter des options pour améliorer la compatibilité
+    const uploadOptions = {
       resource_type: 'video',
+      fetch_format: 'auto',
+      quality: 'auto',
+      flags: 'attachment',
       ...options
-    });
+    };
+    
+    console.log('Options d\'upload:', uploadOptions);
+    
+    const result = await cloudinary.uploader.upload(url, uploadOptions);
     
     console.log('Cloudinary upload result:', result);
     
@@ -44,7 +57,10 @@ export async function uploadVideoFromUrl(url: string, options: any = {}) {
     };
   } catch (error) {
     console.error('Erreur lors de l\'upload vers Cloudinary:', error);
-    throw new Error(`Erreur lors de l'upload vers Cloudinary: ${(error as Error).message}`);
+    
+    // Fournir des informations plus détaillées sur l'erreur
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    throw new Error(`Erreur lors de l'upload vers Cloudinary: ${errorMessage}`);
   }
 }
 

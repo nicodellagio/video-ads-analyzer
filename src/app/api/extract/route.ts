@@ -30,6 +30,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Vérifier si l'URL est une URL Facebook Ads Library
+    if (source === 'meta' && url.includes('facebook.com/ads/library')) {
+      return NextResponse.json(
+        { error: 'Les URLs Facebook Ads Library ne sont pas directement supportées. Veuillez utiliser l\'URL directe de la vidéo.' },
+        { status: 400 }
+      );
+    }
+
     // Extract video based on source
     try {
       let videoMetadata;
@@ -51,8 +59,18 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: true, video: videoMetadata });
     } catch (error) {
       console.error('Extraction failed:', error);
+      
+      // Vérifier si l'erreur est liée à Cloudinary
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      if (errorMessage.includes('Cloudinary')) {
+        return NextResponse.json(
+          { error: `Erreur Cloudinary: ${errorMessage}` },
+          { status: 400 }
+        );
+      }
+      
       return NextResponse.json(
-        { error: `Unable to extract video: ${(error as Error).message}` },
+        { error: `Unable to extract video: ${errorMessage}` },
         { status: 500 }
       );
     }

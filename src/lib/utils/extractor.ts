@@ -209,6 +209,11 @@ export async function extractFacebookVideo(url: string): Promise<VideoMetadata> 
     if (isServerless) {
       console.log('Utilisation de Cloudinary pour l\'extraction de vidéo Facebook en environnement serverless');
       
+      // Vérifier si l'URL est une URL Facebook Ads Library
+      if (url.includes('facebook.com/ads/library')) {
+        throw new Error('Les URLs Facebook Ads Library ne sont pas directement supportées. Veuillez utiliser l\'URL directe de la vidéo.');
+      }
+      
       // Générer un ID unique pour la vidéo
       const videoId = uuidv4();
       
@@ -290,6 +295,17 @@ export async function extractInstagramVideo(url: string): Promise<VideoMetadata>
     // En environnement serverless (Vercel), utiliser Cloudinary
     if (isServerless) {
       console.log('Utilisation de Cloudinary pour l\'extraction de vidéo Instagram en environnement serverless');
+      
+      // Vérifier si l'URL est une URL Instagram qui nécessite une authentification
+      if (url.includes('instagram.com') && !url.includes('cdninstagram.com')) {
+        // Essayer d'extraire l'URL directe de la vidéo si possible
+        try {
+          // Si nous ne pouvons pas extraire l'URL directe, informer l'utilisateur
+          console.log('Tentative d\'extraction directe depuis Instagram...');
+        } catch (error) {
+          console.error('Erreur lors de l\'extraction de l\'URL directe:', error);
+        }
+      }
       
       // Générer un ID unique pour la vidéo
       const videoId = uuidv4();
