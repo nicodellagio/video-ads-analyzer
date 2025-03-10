@@ -1,9 +1,10 @@
 import { join } from 'path';
 import { writeFile } from 'fs/promises';
 import { v4 as uuidv4 } from 'uuid';
-import { ensureUploadDir, extractVideoMetadata } from './video';
+import { ensureUploadDir, extractVideoMetadata, UPLOAD_DIR, UPLOAD_URL_PATH } from './video';
 import { getFacebookVideoInfo, getInstagramVideoInfo, downloadVideo } from './meta-api';
 import type { VideoMetadata } from './video';
+import { isServerless } from '@/lib/config/environment';
 
 // Types de sources vidéo supportées
 export type VideoSource = 'instagram' | 'meta' | 'youtube' | 'tiktok';
@@ -17,7 +18,6 @@ interface ExtractionOptions {
 /**
  * Valide une URL en fonction de la source
  * @param url URL à valider
- * @param source Type de source (instagram, meta, etc.)
  * @returns Booléen indiquant si l'URL est valide
  */
 export function validateUrl(url: string): boolean {
@@ -44,6 +44,11 @@ export async function extractVideoFromUrl(options: ExtractionOptions): Promise<V
   }
   
   try {
+    // En environnement serverless, nous ne pouvons pas utiliser yt-dlp
+    if (isServerless) {
+      throw new Error('L\'extraction de vidéos n\'est pas disponible en environnement serverless');
+    }
+
     // Importer les modules côté serveur uniquement
     const { exec } = await import('child_process');
     const { promisify } = await import('util');
@@ -54,7 +59,7 @@ export async function extractVideoFromUrl(options: ExtractionOptions): Promise<V
     
     // Générer un ID unique pour la vidéo
     const videoId = uuidv4();
-    const outputPath = join(process.cwd(), 'public', 'uploads', `${videoId}.mp4`);
+    const outputPath = join(UPLOAD_DIR, `${videoId}.mp4`);
     
     console.log('Extraction of video from:', url);
     console.log('Output path:', outputPath);

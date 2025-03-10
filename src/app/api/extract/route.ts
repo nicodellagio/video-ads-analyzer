@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { validateUrl, extractFacebookVideo, extractInstagramVideo } from '@/lib/utils/extractor';
 import type { VideoSource } from '@/lib/utils/extractor';
+import { isServerless } from '@/lib/config/environment';
 
 export const maxDuration = 60; // 60 secondes maximum pour le plan hobby de Vercel
 export const dynamic = 'force-dynamic'; // Force dynamic mode to avoid caching
@@ -26,6 +27,17 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { error: `Invalid URL for source ${source}` },
         { status: 400 }
+      );
+    }
+
+    // En environnement serverless (Vercel), nous ne pouvons pas extraire de vidéos
+    if (isServerless) {
+      return NextResponse.json(
+        { 
+          error: 'L\'extraction de vidéos n\'est pas disponible en environnement serverless (Vercel)',
+          message: 'Cette fonctionnalité n\'est disponible qu\'en environnement de développement local'
+        },
+        { status: 501 }
       );
     }
 
