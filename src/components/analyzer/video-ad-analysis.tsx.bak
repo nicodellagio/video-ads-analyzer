@@ -1,0 +1,917 @@
+"use client"
+
+import type React from "react"
+
+import { useState, useEffect } from "react"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Input } from "@/components/ui/input"
+import { Button } from "@/components/ui/button"
+import { Textarea } from "@/components/ui/textarea"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Badge } from "@/components/ui/badge"
+import { Progress } from "@/components/ui/progress"
+import {
+  Instagram,
+  Facebook,
+  Upload,
+  FileText,
+  Download,
+  ExternalLink,
+  Play,
+  Pause,
+  Volume2,
+  VolumeX,
+  Loader2,
+  CheckCircle2,
+  Brain,
+  Share2,
+  Maximize2,
+  AlertCircle,
+  X
+} from "lucide-react"
+import { useAnalyzer, LanguageCode } from "@/lib/context/AnalyzerContext"
+
+// Fonction utilitaire pour formater le contenu HTML
+const formatHtmlContent = (content: string) => {
+  if (!content) return '';
+  
+  // Étape 1: Supprimer les titres de section
+  let formatted = content.replace(/^\*\*[^*]+\*\*:\s*/m, '');
+  
+  // Étape 2: Remplacer les ** par des balises strong
+  formatted = formatted.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+  
+  // Étape 3: Formater les puces pour une meilleure lecture
+  formatted = formatted.replace(/^- (.+)$/gm, '• $1');
+  
+  // Étape 4: Ajouter des sauts de ligne pour les paragraphes
+  formatted = formatted.replace(/\n\n/g, '</p><p>');
+  
+  // Étape 5: Envelopper dans des balises p si ce n'est pas déjà fait
+  if (!formatted.startsWith('<p>')) {
+    formatted = `<p>${formatted}</p>`;
+  }
+  
+  return formatted;
+};
+
+// Fonction pour filtrer les éléments uniques et éviter les duplications
+const getUniqueElements = (elements: string[]) => {
+  if (!elements || elements.length === 0) return [];
+  
+  // Nettoyer et formater chaque élément
+  const cleanedElements = elements.map(element => {
+    // Supprimer les tirets au début si présents
+    return element.trim().replace(/^-\s*/, '');
+  });
+  
+  // Filtrer les éléments vides ou trop courts
+  return cleanedElements
+    .filter(element => element.length > 3)
+    .filter((element, index, self) => 
+      // Garder seulement la première occurrence de chaque élément
+      self.indexOf(element) === index
+    );
+};
+
+export default function VideoAdAnalysis() {
+  // Utiliser le contexte d'analyse
+  const {
+    videoUrl,
+    videoSource,
+    uploadedFile,
+    isProcessing,
+    isAnalyzed,
+    progress,
+    videoMetadata,
+    transcription,
+    analysis,
+    error,
+    isTranslating,
+    
+    setVideoUrl,
+    setVideoSource,
+    setUploadedFile,
+    processVideoUrl,
+    processUploadedFile,
+    generateExport,
+    translateTranscription,
+    resetState,
+  } = useAnalyzer();
+
+  // État local pour l'interface utilisateur
+  const [currentTab, setCurrentTab] = useState("instagram")
+  const [isPlaying, setIsPlaying] = useState(false)
+  const [isMuted, setIsMuted] = useState(false)
+  const [selectedLanguage, setSelectedLanguage] = useState<LanguageCode>("fr")
+  const [showError, setShowError] = useState(true)
+  const [isExporting, setIsExporting] = useState(false)
+  const [googleAuthMessage, setGoogleAuthMessage] = useState<string | null>(null)
+
+  // Gérer le changement de langue
+  const handleLanguageChange = async (language: string) => {
+    const langCode = language as LanguageCode;
+    setSelectedLanguage(langCode);
+    
+    // Si la langue sélectionnée n'est pas la langue originale (fr) et que la traduction n'existe pas encore
+    if (langCode !== "fr" && transcription && (!transcription.translations || !transcription.translations[langCode])) {
+      try {
+        await translateTranscription(langCode);
+      } catch (error) {
+        console.error("Erreur lors de la traduction:", error);
+      }
+    }
+  };
+
+  // Obtenir le texte à afficher en fonction de la langue sélectionnée
+  const getDisplayText = () => {
+    if (!transcription) {
+      console.log("Transcription non disponible");
+      return "";
+    }
+    
+    // Vérifier la structure de l'objet transcription et afficher des informations de débogage
+    console.log("Structure de transcription:", JSON.stringify(transcription, null, 2));
+    
+    // Vérifier si transcription est un objet ou une chaîne de caractères
+    if (typeof transcription === 'string') {
+      console.log("Transcription est une chaîne de caractères");
+      return transcription;
+    }
+    
+    // Vérifier si transcription a une propriété text
+    if (!transcription.text && (transcription as any).transcription) {
+      console.log("Utilisation de transcription.transcription");
+      return (transcription as any).transcription;
+    }
+    
+    // Si la langue sélectionnée est la langue originale
+    if (selectedLanguage === "fr") {
+      // Vérifier si text est disponible, sinon essayer d'autres propriétés
+      if (transcription.text) {
+        return transcription.text;
+      } else if ((transcription as any).transcription) {
+        return (transcription as any).transcription;
+      } else if ((transcription as any).text_fr) {
+        return (transcription as any).text_fr;
+      }
+      
+      // Si aucune propriété n'est trouvée, retourner une chaîne vide
+      return "";
+    }
+    
+    // Si une traduction existe pour cette langue
+    if (transcription.translations && transcription.translations[selectedLanguage]) {
+      return transcription.translations[selectedLanguage];
+    }
+    
+    // Si la traduction est en cours
+    if (isTranslating) {
+      return "Traduction en cours...";
+    }
+    
+    // Par défaut, afficher le texte original
+    if (transcription.text) {
+      return transcription.text;
+    } else if ((transcription as any).transcription) {
+      return (transcription as any).transcription;
+    } else if ((transcription as any).text_fr) {
+      return (transcription as any).text_fr;
+    }
+    
+    return "";
+  };
+
+  const handleUrlSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!videoUrl) return
+    setShowError(true)
+    resetState()
+    processVideoUrl(videoUrl, currentTab as any);
+  }
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file) {
+      setUploadedFile(file)
+    }
+  }
+
+  const handleUploadSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!uploadedFile) return
+    setShowError(true)
+    resetState()
+    processUploadedFile(uploadedFile);
+  }
+
+  const handleExport = async (format: 'pdf' | 'gdocs') => {
+    try {
+      setShowError(true);
+      setIsExporting(true);
+      setGoogleAuthMessage(null);
+      
+      if (format === 'gdocs') {
+        setGoogleAuthMessage("Préparation de l'export vers Google Docs...");
+      }
+      
+      const response = await generateExport(format);
+      
+      if (format === 'pdf') {
+        // Télécharger le PDF directement
+        const link = document.createElement('a');
+        link.href = response;
+        link.download = `rapport-analyse-video_${new Date().toISOString().split('T')[0]}.pdf`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      } else if (format === 'gdocs') {
+        // Vérifier si l'authentification est nécessaire
+        if (response.needsAuth && response.authUrl) {
+          // Afficher un message d'information
+          setGoogleAuthMessage("Vous allez être redirigé vers Google pour autoriser l'accès à Google Docs.");
+          
+          // Rediriger vers l'URL d'authentification Google après un court délai
+          setTimeout(() => {
+            window.location.href = response.authUrl;
+          }, 2000);
+          return;
+        }
+        
+        // Si c'est une URL de données (HTML), afficher un message
+        if (response.startsWith('blob:') || response.startsWith('data:')) {
+          setGoogleAuthMessage("Export Google Docs non disponible. Un document HTML a été généré à la place.");
+        } else {
+          setGoogleAuthMessage("Document Google Docs créé avec succès!");
+          setTimeout(() => setGoogleAuthMessage(null), 5000);
+        }
+        
+        // Ouvrir le lien dans un nouvel onglet
+        window.open(response, '_blank');
+      }
+    } catch (error) {
+      console.error('Erreur lors de l\'exportation:', error);
+      setGoogleAuthMessage("Une erreur est survenue lors de l'export. Veuillez réessayer.");
+      // L'erreur est déjà gérée dans le contexte
+    } finally {
+      setIsExporting(false);
+    }
+  }
+
+  const togglePlayback = () => {
+    setIsPlaying(!isPlaying)
+  }
+
+  const toggleMute = () => {
+    setIsMuted(!isMuted)
+  }
+
+  // Mettre à jour la source vidéo lorsque l'onglet change
+  const handleTabChange = (value: string) => {
+    setCurrentTab(value);
+    setVideoSource(value as any);
+  }
+
+  // Fermer le message d'erreur
+  const dismissError = () => {
+    setShowError(false);
+  }
+
+  // Vérifier si l'utilisateur revient d'une authentification Google
+  useEffect(() => {
+    // Vérifier si l'URL contient un paramètre d'erreur d'authentification
+    const urlParams = new URLSearchParams(window.location.search);
+    const authError = urlParams.get('error');
+    const authSuccess = urlParams.get('auth_success');
+    
+    if (authError === 'auth_failed') {
+      setGoogleAuthMessage("L'authentification Google a échoué. Veuillez réessayer.");
+      
+      // Nettoyer l'URL
+      window.history.replaceState({}, document.title, window.location.pathname);
+    } else if (authSuccess === 'true' && isAnalyzed && transcription && analysis) {
+      // L'utilisateur vient de s'authentifier avec succès, déclencher l'export
+      setGoogleAuthMessage("Authentification réussie. Création du document Google Docs en cours...");
+      
+      // Nettoyer l'URL
+      window.history.replaceState({}, document.title, window.location.pathname);
+      
+      // Déclencher l'export après un court délai
+      setTimeout(() => {
+        handleExport('gdocs');
+      }, 1000);
+    }
+  }, [isAnalyzed, transcription, analysis]);
+
+  return (
+    <div className="min-h-screen bg-white text-black">
+      <div className="container mx-auto py-12 max-w-5xl px-4">
+        <div className="flex items-center justify-between mb-12">
+          <div>
+            <h1 className="text-4xl font-bold tracking-tight">Video Analyzer</h1>
+            <p className="text-gray-500 mt-2 text-lg">Analysez vos vidéos publicitaires avec précision</p>
+          </div>
+          <Badge variant="outline" className="border-black text-black px-3 py-1 rounded-full">
+            BETA
+          </Badge>
+        </div>
+
+        {/* Affichage des erreurs */}
+        {error && showError && (
+          <div className="mb-6 bg-red-50 border border-red-200 rounded-lg p-4 flex items-start">
+            <AlertCircle className="h-5 w-5 text-red-500 mt-0.5 mr-3 flex-shrink-0" />
+            <div className="flex-1">
+              <p className="text-red-800 font-medium">Erreur</p>
+              <p className="text-red-700 text-sm">{error}</p>
+            </div>
+            <Button 
+              variant="ghost" 
+              size="sm" 
+              className="text-gray-500 hover:text-gray-700"
+              onClick={dismissError}
+            >
+              <X className="h-4 w-4" />
+            </Button>
+          </div>
+        )}
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
+          {/* Input Section */}
+          <div>
+            <Card className="bg-white border-gray-200 shadow-sm rounded-2xl overflow-hidden">
+              <CardHeader className="border-b border-gray-100 pb-4">
+                <CardTitle className="flex items-center gap-2 text-black">Source d'entrée</CardTitle>
+                <CardDescription className="text-gray-500">
+                  Entrez une URL ou téléchargez un fichier vidéo à analyser
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="p-0">
+                <Tabs value={currentTab} onValueChange={handleTabChange} className="w-full">
+                  <TabsList className="grid grid-cols-3 bg-gray-50 rounded-none border-b border-gray-100 p-0">
+                    <TabsTrigger
+                      value="instagram"
+                      className="data-[state=active]:bg-white data-[state=active]:text-black rounded-none border-r border-gray-100 py-3"
+                    >
+                      <Instagram className="h-4 w-4 mr-2" />
+                      Instagram
+                    </TabsTrigger>
+                    <TabsTrigger
+                      value="meta"
+                      className="data-[state=active]:bg-white data-[state=active]:text-black rounded-none border-r border-gray-100 py-3"
+                    >
+                      <Facebook className="h-4 w-4 mr-2" />
+                      Meta Ads
+                    </TabsTrigger>
+                    <TabsTrigger
+                      value="upload"
+                      className="data-[state=active]:bg-white data-[state=active]:text-black rounded-none py-3"
+                    >
+                      <Upload className="h-4 w-4 mr-2" />
+                      Upload
+                    </TabsTrigger>
+                  </TabsList>
+
+                  <TabsContent value="instagram" className="p-6 m-0">
+                    <form onSubmit={handleUrlSubmit} className="space-y-4">
+                      <div>
+                        <label htmlFor="instagram-url" className="block text-sm font-medium mb-1 text-gray-700">
+                          URL Instagram Reel/Ad
+                        </label>
+                        <Input
+                          id="instagram-url"
+                          placeholder="https://www.instagram.com/reel/..."
+                          value={videoUrl}
+                          onChange={(e) => setVideoUrl(e.target.value)}
+                          className="bg-white border-gray-200 focus:border-black focus:ring-black text-black"
+                        />
+                        <p className="text-xs text-gray-500 mt-1">
+                          Exemple: https://www.instagram.com/reel/CxKLz7xIWdF/
+                        </p>
+                      </div>
+                      <Button
+                        type="submit"
+                        disabled={isProcessing || !videoUrl}
+                        className="bg-black hover:bg-gray-900 text-white w-full rounded-full"
+                      >
+                        {isProcessing ? (
+                          <>
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            Traitement {progress}%
+                          </>
+                        ) : (
+                          <>Analyser</>
+                        )}
+                      </Button>
+                    </form>
+                  </TabsContent>
+
+                  <TabsContent value="meta" className="p-6 m-0">
+                    <form onSubmit={handleUrlSubmit} className="space-y-4">
+                      <div>
+                        <label htmlFor="meta-url" className="block text-sm font-medium mb-1 text-gray-700">
+                          URL Meta Ad Library
+                        </label>
+                        <Input
+                          id="meta-url"
+                          placeholder="https://www.facebook.com/ads/library/..."
+                          value={videoUrl}
+                          onChange={(e) => setVideoUrl(e.target.value)}
+                          className="bg-white border-gray-200 focus:border-black focus:ring-black text-black"
+                        />
+                        <p className="text-xs text-gray-500 mt-1">
+                          Exemple: https://www.facebook.com/ads/library/?id=123456789
+                        </p>
+                      </div>
+                      <Button
+                        type="submit"
+                        disabled={isProcessing || !videoUrl}
+                        className="bg-black hover:bg-gray-900 text-white w-full rounded-full"
+                      >
+                        {isProcessing ? (
+                          <>
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            Traitement {progress}%
+                          </>
+                        ) : (
+                          <>Analyser</>
+                        )}
+                      </Button>
+                    </form>
+                  </TabsContent>
+
+                  <TabsContent value="upload" className="p-6 m-0">
+                    <form onSubmit={handleUploadSubmit} className="space-y-4">
+                      <div>
+                        <label htmlFor="video-upload" className="block text-sm font-medium mb-1 text-gray-700">
+                          Télécharger un fichier vidéo
+                        </label>
+                        <div className="border-2 border-dashed border-gray-200 rounded-lg p-6 text-center hover:border-black transition-colors cursor-pointer bg-gray-50">
+                          <Input
+                            id="video-upload"
+                            type="file"
+                            accept="video/*"
+                            onChange={handleFileUpload}
+                            className="hidden"
+                          />
+                          <label htmlFor="video-upload" className="cursor-pointer">
+                            <Upload className="h-8 w-8 mx-auto text-gray-400 mb-2" />
+                            <p className="text-sm text-gray-600">Glissez-déposez ou cliquez pour télécharger</p>
+                            <p className="text-xs text-gray-400 mt-1">MP4, MOV ou AVI jusqu'à 100MB</p>
+                          </label>
+                        </div>
+                      </div>
+                      {uploadedFile && (
+                        <div className="bg-gray-50 p-3 rounded-md border border-gray-200">
+                          <p className="text-sm text-gray-700 flex items-center">
+                            <FileText className="h-4 w-4 mr-2 text-gray-500" />
+                            {uploadedFile.name}
+                          </p>
+                        </div>
+                      )}
+                      <Button
+                        type="submit"
+                        disabled={isProcessing || !uploadedFile}
+                        className="bg-black hover:bg-gray-900 text-white w-full rounded-full"
+                      >
+                        {isProcessing ? (
+                          <>
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            Traitement {progress}%
+                          </>
+                        ) : (
+                          <>Télécharger & Analyser</>
+                        )}
+                      </Button>
+                    </form>
+                  </TabsContent>
+                </Tabs>
+
+                {isProcessing && (
+                  <div className="p-6 pt-0">
+                    <Progress value={progress} className="h-1 bg-gray-100" />
+                    <div className="flex justify-between mt-2 text-xs text-gray-400">
+                      <span>Récupération vidéo</span>
+                      <span>Analyse du contenu</span>
+                      <span>Génération du rapport</span>
+                    </div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {isAnalyzed && videoMetadata && (
+              <Card className="mt-8 bg-white border-gray-200 shadow-sm rounded-2xl overflow-hidden">
+                <CardHeader className="border-b border-gray-100 pb-4">
+                  <CardTitle className="flex items-center gap-2 text-black">Aperçu vidéo</CardTitle>
+                </CardHeader>
+                <CardContent className="p-0">
+                  <div className="relative aspect-video bg-gray-50 overflow-hidden">
+                    <video
+                      src={videoMetadata.url}
+                      poster="/placeholder.svg?height=720&width=1280"
+                      className="w-full h-full object-contain"
+                      muted={isMuted}
+                      controls={false}
+                      playsInline
+                      ref={(video) => {
+                        if (video) {
+                          if (isPlaying) {
+                            video.play().catch(e => console.error('Erreur de lecture vidéo:', e));
+                          } else {
+                            video.pause();
+                          }
+                        }
+                      }}
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/20 via-transparent to-black/10 opacity-0 hover:opacity-100 transition-opacity">
+                      <div className="absolute bottom-0 left-0 right-0 p-4">
+                        <div className="flex items-center justify-between">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="text-white hover:bg-white/10 rounded-full"
+                            onClick={togglePlayback}
+                          >
+                            {isPlaying ? <Pause className="h-6 w-6" /> : <Play className="h-6 w-6" />}
+                          </Button>
+                          <div className="flex items-center gap-2">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="text-white hover:bg-white/10 rounded-full"
+                              onClick={toggleMute}
+                            >
+                              {isMuted ? <VolumeX className="h-5 w-5" /> : <Volume2 className="h-5 w-5" />}
+                            </Button>
+                            <Button variant="ghost" size="icon" className="text-white hover:bg-white/10 rounded-full">
+                              <Maximize2 className="h-5 w-5" />
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-3 divide-x divide-gray-100 border-t border-gray-100">
+                    <div className="p-4 text-center">
+                      <p className="text-xs text-gray-500">Durée</p>
+                      <p className="text-lg font-mono text-black">{videoMetadata.duration}</p>
+                    </div>
+                    <div className="p-4 text-center">
+                      <p className="text-xs text-gray-500">Format</p>
+                      <p className="text-lg font-mono text-black">{videoMetadata.format}</p>
+                    </div>
+                    <div className="p-4 text-center">
+                      <p className="text-xs text-gray-500">Taille</p>
+                      <p className="text-lg font-mono text-black">{videoMetadata.size}</p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+          </div>
+
+          {/* Output Section */}
+          <div>
+            {isAnalyzed && transcription && analysis ? (
+              <Card className="bg-white border-gray-200 shadow-sm rounded-2xl overflow-hidden">
+                <CardHeader className="border-b border-gray-100 pb-4">
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="flex items-center gap-2 text-black">Analyse IA</CardTitle>
+                    <Badge className="bg-gray-100 text-gray-800 border-gray-200 px-3 rounded-full">
+                      <CheckCircle2 className="h-3 w-3 mr-1" />
+                      Traité
+                    </Badge>
+                  </div>
+                  <CardDescription className="text-gray-500">
+                    Transcription et analyse du contenu vidéo
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="p-0">
+                  <div className="p-6 border-b border-gray-100">
+                    <div className="flex items-center justify-between mb-3">
+                      <h3 className="text-lg font-medium text-black flex items-center gap-2">Transcription</h3>
+                      <Select defaultValue={selectedLanguage} onValueChange={handleLanguageChange}>
+                        <SelectTrigger className="w-[140px] bg-white border-gray-200 text-gray-700">
+                          <SelectValue placeholder="Langue" />
+                        </SelectTrigger>
+                        <SelectContent className="bg-white border-gray-200">
+                          <SelectItem value="fr">Français (Original)</SelectItem>
+                          <SelectItem value="en">Anglais</SelectItem>
+                          <SelectItem value="es">Espagnol</SelectItem>
+                          <SelectItem value="de">Allemand</SelectItem>
+                          <SelectItem value="it">Italien</SelectItem>
+                          <SelectItem value="zh">Chinois</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="bg-gray-50 rounded-md border border-gray-200 p-4">
+                      <Textarea
+                        readOnly
+                        className="min-h-[120px] bg-transparent border-0 p-0 focus-visible:ring-0 text-gray-700"
+                        value={getDisplayText()}
+                      />
+                      {isTranslating && (
+                        <div className="mt-2 text-sm text-blue-600 flex items-center gap-1">
+                          <Loader2 className="h-3 w-3 animate-spin" />
+                          Traduction en cours...
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex items-center justify-end mt-2">
+                      <Button 
+                        variant="ghost" 
+                        size="sm" 
+                        className="text-gray-500 hover:text-black gap-1"
+                        onClick={() => navigator.clipboard.writeText(getDisplayText())}
+                      >
+                        <Share2 className="h-3.5 w-3.5" />
+                        Copier
+                      </Button>
+                    </div>
+                  </div>
+
+                  <div className="p-6 border-b border-gray-100">
+                    <h3 className="text-lg font-medium text-black mb-4 flex items-center gap-2">
+                      <Brain className="h-5 w-5 text-blue-500" />
+                      Analyse IA
+                    </h3>
+                    <div className="space-y-4">
+                      {analysis?.targetAudience && (
+                        <div className="bg-gray-50 rounded-md border border-gray-200 p-4">
+                          <h4 className="text-sm font-medium text-black mb-1">Target Audience</h4>
+                          <div className="flex items-center gap-2 mb-2">
+                            <div className="h-2 flex-1 bg-gray-200 rounded-full overflow-hidden">
+                              <div 
+                                className="h-full bg-black rounded-full" 
+                                style={{ width: `${analysis.targetAudience.score * 100}%` }}
+                              ></div>
+                            </div>
+                            <span className="text-xs font-mono text-gray-500">{Math.round(analysis.targetAudience.score * 100)}%</span>
+                          </div>
+                          {analysis.targetAudience.elements.length > 0 && (
+                            <div className="mt-0">
+                              <ul className="list-disc pl-5 text-sm text-gray-600 space-y-2">
+                                {getUniqueElements(analysis.targetAudience.elements).map((element, index) => (
+                                  <li key={index} className="prose prose-sm max-w-none" 
+                                      dangerouslySetInnerHTML={{ __html: formatHtmlContent(element) }} />
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      <div className="bg-gray-50 rounded-md border border-gray-200 p-4">
+                        <h4 className="text-sm font-medium text-black mb-1">Message Clarity</h4>
+                        <div className="flex items-center gap-2 mb-2">
+                          <div className="h-2 flex-1 bg-gray-200 rounded-full overflow-hidden">
+                            <div 
+                              className="h-full bg-black rounded-full"
+                              style={{ width: `${analysis.narrativeStructure.score * 100}%` }}
+                            ></div>
+                          </div>
+                          <span className="text-xs font-mono text-gray-500">{Math.round(analysis.narrativeStructure.score * 100)}%</span>
+                        </div>
+                        {analysis.narrativeStructure.elements.length > 0 && (
+                          <div className="mt-0">
+                            <ul className="list-disc pl-5 text-sm text-gray-600 space-y-2">
+                              {getUniqueElements(analysis.narrativeStructure.elements).map((element, index) => (
+                                <li key={index} className="prose prose-sm max-w-none" 
+                                    dangerouslySetInnerHTML={{ __html: formatHtmlContent(element) }} />
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="bg-gray-50 rounded-md border border-gray-200 p-4">
+                        <h4 className="text-sm font-medium text-black mb-1">Call to Action</h4>
+                        <div className="flex items-center gap-2 mb-2">
+                          <div className="h-2 flex-1 bg-gray-200 rounded-full overflow-hidden">
+                            <div 
+                              className="h-full bg-black rounded-full"
+                              style={{ width: `${analysis.callToAction.score * 100}%` }}
+                            ></div>
+                          </div>
+                          <span className="text-xs font-mono text-gray-500">{Math.round(analysis.callToAction.score * 100)}%</span>
+                        </div>
+                        {analysis.callToAction.elements.length > 0 && (
+                          <div className="mt-0">
+                            <ul className="list-disc pl-5 text-sm text-gray-600 space-y-2">
+                              {getUniqueElements(analysis.callToAction.elements).map((element, index) => (
+                                <li key={index} className="prose prose-sm max-w-none" 
+                                    dangerouslySetInnerHTML={{ __html: formatHtmlContent(element) }} />
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="bg-gray-50 rounded-md border border-gray-200 p-4">
+                        <h4 className="text-sm font-medium text-black mb-1">Tone and Style</h4>
+                        <div className="flex items-center gap-2 mb-2">
+                          <div className="h-2 flex-1 bg-gray-200 rounded-full overflow-hidden">
+                            <div 
+                              className="h-full bg-black rounded-full" 
+                              style={{ width: `${analysis.storytelling.score * 100}%` }}
+                            ></div>
+                          </div>
+                          <span className="text-xs font-mono text-gray-500">{Math.round(analysis.storytelling.score * 100)}%</span>
+                        </div>
+                        {analysis.storytelling.elements.length > 0 && (
+                          <div className="mt-0">
+                            <ul className="list-disc pl-5 text-sm text-gray-600 space-y-2">
+                              {getUniqueElements(analysis.storytelling.elements).map((element, index) => (
+                                <li key={index} className="prose prose-sm max-w-none" 
+                                    dangerouslySetInnerHTML={{ __html: formatHtmlContent(element) }} />
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                      </div>
+
+                      {analysis?.emotionalTriggers && (
+                        <div className="bg-gray-50 rounded-md border border-gray-200 p-4">
+                          <h4 className="text-sm font-medium text-black mb-1">Effectiveness Evaluation</h4>
+                          <div className="flex items-center gap-2 mb-2">
+                            <div className="h-2 flex-1 bg-gray-200 rounded-full overflow-hidden">
+                              <div 
+                                className="h-full bg-black rounded-full" 
+                                style={{ width: `${analysis.emotionalTriggers.score * 100}%` }}
+                              ></div>
+                            </div>
+                            <span className="text-xs font-mono text-gray-500">{Math.round(analysis.emotionalTriggers.score * 100)}%</span>
+                          </div>
+                          {analysis.emotionalTriggers.elements.length > 0 && (
+                            <div className="mt-0">
+                              <ul className="list-disc pl-5 text-sm text-gray-600 space-y-2">
+                                {getUniqueElements(analysis.emotionalTriggers.elements).map((element, index) => (
+                                  <li key={index} className="prose prose-sm max-w-none" 
+                                      dangerouslySetInnerHTML={{ __html: formatHtmlContent(element) }} />
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="p-6 grid grid-cols-2 gap-4">
+                    {googleAuthMessage && (
+                      <div className="col-span-2 mb-4 p-3 bg-blue-50 border border-blue-200 rounded-md text-blue-700 text-sm">
+                        <div className="flex items-center">
+                          <AlertCircle className="h-4 w-4 mr-2" />
+                          {googleAuthMessage}
+                        </div>
+                      </div>
+                    )}
+                    <Button
+                      variant="outline"
+                      className="gap-2 border-gray-200 text-gray-700 hover:bg-gray-50 hover:text-black rounded-full"
+                      onClick={() => handleExport('pdf')}
+                      disabled={isExporting}
+                    >
+                      {isExporting ? (
+                        <>
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          Création PDF...
+                        </>
+                      ) : (
+                        <>
+                          <Download className="h-4 w-4" />
+                          Télécharger PDF
+                        </>
+                      )}
+                    </Button>
+                    <Button 
+                      className="gap-2 bg-black hover:bg-gray-900 text-white rounded-full"
+                      onClick={() => handleExport('gdocs')}
+                      disabled={isExporting}
+                    >
+                      {isExporting ? (
+                        <>
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          Export en cours...
+                        </>
+                      ) : (
+                        <>
+                          <ExternalLink className="h-4 w-4" />
+                          Exporter vers Google Docs
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            ) : (
+              <Card className="bg-white border-gray-200 shadow-sm rounded-2xl overflow-hidden h-full">
+                <CardHeader className="border-b border-gray-100 pb-4">
+                  <CardTitle className="flex items-center gap-2 text-black">Analyse IA</CardTitle>
+                  <CardDescription className="text-gray-500">
+                    Soumettez une vidéo pour voir les résultats d'analyse
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="flex flex-col items-center justify-center text-center p-12 h-full">
+                  <div className="w-24 h-24 rounded-full bg-gray-100 flex items-center justify-center mb-6 relative">
+                    <Brain className="h-12 w-12 text-gray-300" />
+                    <div className="absolute inset-0 rounded-full border-2 border-transparent border-t-black animate-spin [animation-duration:3s]"></div>
+                  </div>
+                  <h3 className="text-xl font-medium mb-2 text-black">IA prête</h3>
+                  <p className="text-sm text-gray-500 max-w-md">
+                    Notre IA avancée est prête à analyser votre contenu vidéo. Soumettez une vidéo pour générer des insights et une transcription.
+                  </p>
+                </CardContent>
+              </Card>
+            )}
+
+            {isAnalyzed && (
+              <Card className="mt-8 bg-white border-gray-200 shadow-sm rounded-2xl overflow-hidden">
+                <CardHeader className="border-b border-gray-100 pb-4">
+                  <CardTitle className="flex items-center gap-2 text-black">Métriques de traitement</CardTitle>
+                </CardHeader>
+                <CardContent className="p-0">
+                  <div className="p-6">
+                    <div className="grid grid-cols-2 gap-4 mb-6">
+                      <div className="bg-gray-50 rounded-md border border-gray-200 p-4 text-center">
+                        <p className="text-xs text-gray-500 mb-1">Temps de traitement total</p>
+                        <p className="text-2xl font-mono text-black">3.2s</p>
+                      </div>
+                      <div className="bg-gray-50 rounded-md border border-gray-200 p-4 text-center">
+                        <p className="text-xs text-gray-500 mb-1">Confiance IA</p>
+                        <p className="text-2xl font-mono text-black">98.5%</p>
+                      </div>
+                    </div>
+
+                    <div className="space-y-4">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-full bg-black flex items-center justify-center text-white shrink-0">
+                          <CheckCircle2 className="h-4 w-4" />
+                        </div>
+                        <div className="flex-1">
+                          <div className="flex items-center justify-between">
+                            <h4 className="text-sm font-medium text-black">Vidéo récupérée</h4>
+                            <p className="text-xs font-mono text-gray-500">0.4s</p>
+                          </div>
+                          <div className="h-1 w-full bg-gray-200 rounded-full mt-1 overflow-hidden">
+                            <div className="h-full w-[12%] bg-black rounded-full"></div>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-full bg-black flex items-center justify-center text-white shrink-0">
+                          <CheckCircle2 className="h-4 w-4" />
+                        </div>
+                        <div className="flex-1">
+                          <div className="flex items-center justify-between">
+                            <h4 className="text-sm font-medium text-black">Audio extrait</h4>
+                            <p className="text-xs font-mono text-gray-500">0.6s</p>
+                          </div>
+                          <div className="h-1 w-full bg-gray-200 rounded-full mt-1 overflow-hidden">
+                            <div className="h-full w-[19%] bg-black rounded-full"></div>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-full bg-black flex items-center justify-center text-white shrink-0">
+                          <CheckCircle2 className="h-4 w-4" />
+                        </div>
+                        <div className="flex-1">
+                          <div className="flex items-center justify-between">
+                            <h4 className="text-sm font-medium text-black">Transcription terminée</h4>
+                            <p className="text-xs font-mono text-gray-500">1.2s</p>
+                          </div>
+                          <div className="h-1 w-full bg-gray-200 rounded-full mt-1 overflow-hidden">
+                            <div className="h-full w-[38%] bg-black rounded-full"></div>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-full bg-black flex items-center justify-center text-white shrink-0">
+                          <CheckCircle2 className="h-4 w-4" />
+                        </div>
+                        <div className="flex-1">
+                          <div className="flex items-center justify-between">
+                            <h4 className="text-sm font-medium text-black">Analyse générée</h4>
+                            <p className="text-xs font-mono text-gray-500">1.0s</p>
+                          </div>
+                          <div className="h-1 w-full bg-gray-200 rounded-full mt-1 overflow-hidden">
+                            <div className="h-full w-[31%] bg-black rounded-full"></div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+} 
