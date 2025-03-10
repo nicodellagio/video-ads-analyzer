@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { validateUrl, extractFacebookVideo, extractInstagramVideo } from '@/lib/utils/extractor';
+import { validateUrl, extractFacebookVideo, extractInstagramVideo, extractVideoFromUrl } from '@/lib/utils/extractor';
 import type { VideoSource } from '@/lib/utils/extractor';
 import { isServerless } from '@/lib/config/environment';
 
@@ -30,29 +30,12 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Vérifier si l'URL est une URL Facebook ou Instagram
-    if (isServerless) {
-      if ((source === 'meta' || url.includes('facebook.com')) && !url.includes('fbcdn.net')) {
-        return NextResponse.json(
-          { 
-            error: 'L\'extraction de vidéos Facebook n\'est pas prise en charge en environnement serverless.',
-            details: 'Les restrictions de sécurité de Facebook empêchent l\'extraction automatique de vidéos.',
-            help: 'Veuillez télécharger directement la vidéo depuis votre ordinateur en utilisant le bouton "Télécharger" en haut de la page.'
-          },
-          { status: 400 }
-        );
-      }
-      
-      if ((source === 'instagram' || url.includes('instagram.com')) && !url.includes('cdninstagram.com')) {
-        return NextResponse.json(
-          { 
-            error: 'L\'extraction de vidéos Instagram n\'est pas prise en charge en environnement serverless.',
-            details: 'Les restrictions de sécurité d\'Instagram empêchent l\'extraction automatique de vidéos.',
-            help: 'Veuillez télécharger directement la vidéo depuis votre ordinateur en utilisant le bouton "Télécharger" en haut de la page.'
-          },
-          { status: 400 }
-        );
-      }
+    // Vérifier si l'URL est une URL Facebook Ads Library
+    if (source === 'meta' && url.includes('facebook.com/ads/library')) {
+      return NextResponse.json(
+        { error: 'Les URLs Facebook Ads Library ne sont pas directement supportées. Veuillez utiliser l\'URL directe de la vidéo.' },
+        { status: 400 }
+      );
     }
 
     // Extract video based on source
@@ -65,6 +48,9 @@ export async function POST(request: NextRequest) {
       } else if (source === 'instagram') {
         console.log('Attempting extraction for Instagram...');
         videoMetadata = await extractInstagramVideo(url);
+      } else if (source === 'youtube' || source === 'tiktok') {
+        console.log(`Attempting extraction for ${source}...`);
+        videoMetadata = await extractVideoFromUrl({ url, source });
       } else {
         return NextResponse.json(
           { error: `Extraction for source ${source} is not yet implemented` },
@@ -77,84 +63,34 @@ export async function POST(request: NextRequest) {
     } catch (error) {
       console.error('Extraction failed:', error);
       
-      // Formater l'erreur de manière plus détaillée
-      let errorMessage = 'Erreur inconnue';
+      // Vérifier le type d'erreur
+      const errorMessage = error instanceof Error ? error.message : String(error);
       
-      if (error instanceof Error) {
-        errorMessage = error.message;
-      } else if (typeof error === 'object' && error !== null) {
-        try {
-          errorMessage = JSON.stringify(error);
-        } catch (e) {
-          errorMessage = 'Erreur non sérialisable';
-        }
-      } else {
-        errorMessage = String(error);
+      // Erreurs spécifiques API
+      if (errorMessage.includes('RapidAPI')) {
+        return NextResponse.json(
+          { error: `Erreur d'extraction via API: ${errorMessage}` },
+          { status: 400 }
+        );
       }
       
-      // Messages d'erreur spécifiques pour aider l'utilisateur
-      if (errorMessage.includes('Facebook') || (source === 'meta' && errorMessage.includes('extraction'))) {
+      // Erreurs Cloudinary
+      if (errorMessage.includes('Cloudinary')) {
         return NextResponse.json(
-          { 
-            error: 'Impossible d\'extraire la vidéo Facebook.',
-            details: errorMessage,
-            help: 'Veuillez télécharger directement la vidéo depuis votre ordinateur en utilisant le bouton "Télécharger" en haut de la page.'
-          },
-          { status: 400 }
-        );
-      } else if (errorMessage.includes('Instagram') || (source === 'instagram' && errorMessage.includes('extraction'))) {
-        return NextResponse.json(
-          { 
-            error: 'Impossible d\'extraire la vidéo Instagram.',
-            details: errorMessage,
-            help: 'Veuillez télécharger directement la vidéo depuis votre ordinateur en utilisant le bouton "Télécharger" en haut de la page.'
-          },
-          { status: 400 }
-        );
-      } else if (errorMessage.includes('Cloudinary')) {
-        return NextResponse.json(
-          { 
-            error: 'Erreur lors du téléchargement de la vidéo vers Cloudinary.',
-            details: errorMessage,
-            help: 'Veuillez télécharger directement la vidéo depuis votre ordinateur en utilisant le bouton "Télécharger" en haut de la page.'
-          },
+          { error: `Erreur Cloudinary: ${errorMessage}` },
           { status: 400 }
         );
       }
       
       return NextResponse.json(
-        { 
-          error: `Impossible d'extraire la vidéo.`,
-          details: errorMessage,
-          help: 'Veuillez télécharger directement la vidéo depuis votre ordinateur en utilisant le bouton "Télécharger" en haut de la page.'
-        },
+        { error: `Unable to extract video: ${errorMessage}` },
         { status: 500 }
       );
     }
   } catch (error) {
     console.error('Error processing request:', error);
-    
-    // Formater l'erreur de manière plus détaillée
-    let errorMessage = 'Erreur inconnue';
-    
-    if (error instanceof Error) {
-      errorMessage = error.message;
-    } else if (typeof error === 'object' && error !== null) {
-      try {
-        errorMessage = JSON.stringify(error);
-      } catch (e) {
-        errorMessage = 'Erreur non sérialisable';
-      }
-    } else {
-      errorMessage = String(error);
-    }
-    
     return NextResponse.json(
-      { 
-        error: `Erreur lors du traitement de la requête.`,
-        details: errorMessage,
-        help: 'Veuillez télécharger directement la vidéo depuis votre ordinateur en utilisant le bouton "Télécharger" en haut de la page.'
-      },
+      { error: `Error processing request: ${(error as Error).message}` },
       { status: 500 }
     );
   }
