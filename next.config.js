@@ -19,10 +19,6 @@ const nextConfig = {
   typescript: {
     ignoreBuildErrors: true,
   },
-  // Configuration des fonctions serverless pour Vercel
-  serverRuntimeConfig: {
-    maxDuration: 60, // 60 secondes maximum pour les fonctions serverless
-  },
   webpack: (config, { isServer }) => {
     // Ajouter un fallback pour les modules qui utilisent le browser globals
     if (!isServer) {
