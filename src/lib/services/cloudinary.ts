@@ -42,25 +42,59 @@ export async function uploadVideoFromUrl(url: string, options: any = {}) {
     
     console.log('Options d\'upload:', uploadOptions);
     
-    const result = await cloudinary.uploader.upload(url, uploadOptions);
-    
-    console.log('Cloudinary upload result:', result);
-    
-    return {
-      id: result.public_id,
-      url: result.secure_url,
-      format: result.format,
-      duration: result.duration || 0,
-      width: result.width,
-      height: result.height,
-      size: result.bytes,
-      originalName: options.public_id || url.split('/').pop() || 'video'
-    };
+    try {
+      const result = await cloudinary.uploader.upload(url, uploadOptions);
+      console.log('Cloudinary upload result:', result);
+      
+      return {
+        id: result.public_id,
+        url: result.secure_url,
+        format: result.format,
+        duration: result.duration || 0,
+        width: result.width,
+        height: result.height,
+        size: result.bytes,
+        originalName: options.public_id || url.split('/').pop() || 'video'
+      };
+    } catch (cloudinaryError) {
+      // Gérer spécifiquement les erreurs Cloudinary
+      console.error('Erreur Cloudinary spécifique:', cloudinaryError);
+      
+      // Formater l'erreur Cloudinary de manière plus détaillée
+      let errorMessage = 'Erreur inconnue';
+      
+      if (cloudinaryError instanceof Error) {
+        errorMessage = cloudinaryError.message;
+      } else if (typeof cloudinaryError === 'object' && cloudinaryError !== null) {
+        try {
+          errorMessage = JSON.stringify(cloudinaryError);
+        } catch (e) {
+          errorMessage = 'Erreur non sérialisable';
+        }
+      } else {
+        errorMessage = String(cloudinaryError);
+      }
+      
+      throw new Error(`Erreur Cloudinary: ${errorMessage}`);
+    }
   } catch (error) {
     console.error('Erreur lors de l\'upload vers Cloudinary:', error);
     
     // Fournir des informations plus détaillées sur l'erreur
-    const errorMessage = error instanceof Error ? error.message : String(error);
+    let errorMessage = 'Erreur inconnue';
+    
+    if (error instanceof Error) {
+      errorMessage = error.message;
+    } else if (typeof error === 'object' && error !== null) {
+      try {
+        errorMessage = JSON.stringify(error);
+      } catch (e) {
+        errorMessage = 'Erreur non sérialisable';
+      }
+    } else {
+      errorMessage = String(error);
+    }
+    
     throw new Error(`Erreur lors de l'upload vers Cloudinary: ${errorMessage}`);
   }
 }
@@ -93,8 +127,21 @@ export async function uploadVideoFromUrlViaProxy(url: string, source: string, op
       
       console.log(`URL directe construite: ${directUrl}`);
       
-      // Uploader directement vers Cloudinary
-      return await uploadVideoFromUrl(directUrl, options);
+      try {
+        // Uploader directement vers Cloudinary
+        return await uploadVideoFromUrl(directUrl, options);
+      } catch (fbError) {
+        console.error('Erreur lors de l\'upload de l\'annonce Facebook:', fbError);
+        
+        // Essayer une approche alternative pour les annonces Facebook
+        console.log('Tentative alternative pour l\'annonce Facebook...');
+        
+        // URL alternative pour les annonces Facebook
+        const alternativeUrl = `https://www.facebook.com/ads/api/creative_preview.php?crl=1&placement=1&ad_id=${adId}`;
+        console.log(`URL alternative: ${alternativeUrl}`);
+        
+        return await uploadVideoFromUrl(alternativeUrl, options);
+      }
     }
     
     // Pour les autres sources, essayer plusieurs services d'extraction
@@ -126,37 +173,53 @@ export async function uploadVideoFromUrlViaProxy(url: string, source: string, op
         }
       },
       
-      // Service 2: API YouTube-DL (simulé)
+      // Service 2: Essai direct avec l'URL originale
       async () => {
+        console.log(`Essai d'upload direct de l'URL originale: ${url}`);
+        
         try {
-          // Dans un cas réel, vous pourriez avoir un microservice qui exécute youtube-dl
-          // et renvoie l'URL de la vidéo
-          console.log(`Essai avec un service YouTube-DL simulé pour: ${url}`);
+          // Tester si l'URL est directement uploadable vers Cloudinary
+          // en faisant une requête HEAD pour vérifier le type de contenu
+          const response = await fetch(url, { method: 'HEAD' });
+          const contentType = response.headers.get('content-type');
           
-          // Simuler un délai de traitement
-          await new Promise(resolve => setTimeout(resolve, 1000));
-          
-          // Pour les URLs Instagram, simuler une URL de vidéo
-          if (url.includes('instagram.com')) {
-            return `https://scontent.cdninstagram.com/v/t50.16885-16/10000000_${Math.floor(Math.random() * 1000000000)}_${Math.floor(Math.random() * 1000000000)}_n.mp4`;
+          if (contentType && contentType.includes('video')) {
+            console.log(`L'URL semble être une vidéo directe (${contentType})`);
+            return url;
           }
           
-          // Pour les URLs Facebook, simuler une URL de vidéo
-          if (url.includes('facebook.com')) {
-            return `https://video.xx.fbcdn.net/v/t42.9040-2/10000000_${Math.floor(Math.random() * 1000000000)}_${Math.floor(Math.random() * 1000000000)}_n.mp4`;
-          }
-          
+          console.log(`L'URL n'est pas une vidéo directe (${contentType})`);
           return null;
         } catch (e) {
-          console.error('Échec avec le service YouTube-DL simulé:', e);
+          console.error('Échec de la vérification directe:', e);
           return null;
         }
       },
       
-      // Service 3: Fallback direct
+      // Service 3: Fallback pour Facebook
       async () => {
-        console.log(`Essai d'upload direct de l'URL: ${url}`);
-        return url;
+        if (url.includes('facebook.com')) {
+          console.log('Tentative de fallback pour Facebook');
+          
+          // Pour Facebook, essayer une URL de vidéo simulée
+          // Dans un cas réel, vous utiliseriez un service d'extraction
+          const fbVideoId = Math.floor(Math.random() * 1000000000);
+          return `https://video-direct.fbcdn.net/v/t42.9040-2/${fbVideoId}_${Math.floor(Math.random() * 1000000000)}_n.mp4`;
+        }
+        return null;
+      },
+      
+      // Service 4: Fallback pour Instagram
+      async () => {
+        if (url.includes('instagram.com')) {
+          console.log('Tentative de fallback pour Instagram');
+          
+          // Pour Instagram, essayer une URL de vidéo simulée
+          // Dans un cas réel, vous utiliseriez un service d'extraction
+          const igVideoId = Math.floor(Math.random() * 1000000000);
+          return `https://scontent.cdninstagram.com/v/t50.16885-16/${igVideoId}_${Math.floor(Math.random() * 1000000000)}_n.mp4`;
+        }
+        return null;
       }
     ];
     
@@ -181,29 +244,66 @@ export async function uploadVideoFromUrlViaProxy(url: string, source: string, op
     // Générer un ID unique pour la vidéo
     const videoId = options.public_id || uuidv4();
     
-    // Uploader la vidéo vers Cloudinary
-    const result = await cloudinary.uploader.upload(videoUrl, {
-      resource_type: 'video',
-      public_id: videoId,
-      folder: `video-ads-${source}`,
-      ...options
-    });
-    
-    console.log('Cloudinary upload result:', result);
-    
-    return {
-      id: result.public_id,
-      url: result.secure_url,
-      format: result.format,
-      duration: result.duration || 0,
-      width: result.width,
-      height: result.height,
-      size: result.bytes,
-      originalName: options.public_id || url.split('/').pop() || 'video'
-    };
+    try {
+      // Uploader la vidéo vers Cloudinary
+      const result = await cloudinary.uploader.upload(videoUrl, {
+        resource_type: 'video',
+        public_id: videoId,
+        folder: `video-ads-${source}`,
+        ...options
+      });
+      
+      console.log('Cloudinary upload result:', result);
+      
+      return {
+        id: result.public_id,
+        url: result.secure_url,
+        format: result.format,
+        duration: result.duration || 0,
+        width: result.width,
+        height: result.height,
+        size: result.bytes,
+        originalName: options.public_id || url.split('/').pop() || 'video'
+      };
+    } catch (cloudinaryError) {
+      console.error('Erreur Cloudinary spécifique:', cloudinaryError);
+      
+      // Formater l'erreur Cloudinary de manière plus détaillée
+      let errorMessage = 'Erreur inconnue';
+      
+      if (cloudinaryError instanceof Error) {
+        errorMessage = cloudinaryError.message;
+      } else if (typeof cloudinaryError === 'object' && cloudinaryError !== null) {
+        try {
+          errorMessage = JSON.stringify(cloudinaryError);
+        } catch (e) {
+          errorMessage = 'Erreur non sérialisable';
+        }
+      } else {
+        errorMessage = String(cloudinaryError);
+      }
+      
+      throw new Error(`Erreur Cloudinary: ${errorMessage}`);
+    }
   } catch (error) {
     console.error('Erreur lors de l\'upload via proxy:', error);
-    throw new Error(`Erreur lors de l'upload via proxy: ${error instanceof Error ? error.message : String(error)}`);
+    
+    // Formater l'erreur de manière plus détaillée
+    let errorMessage = 'Erreur inconnue';
+    
+    if (error instanceof Error) {
+      errorMessage = error.message;
+    } else if (typeof error === 'object' && error !== null) {
+      try {
+        errorMessage = JSON.stringify(error);
+      } catch (e) {
+        errorMessage = 'Erreur non sérialisable';
+      }
+    } else {
+      errorMessage = String(error);
+    }
+    
+    throw new Error(`Erreur lors de l'upload via proxy: ${errorMessage}`);
   }
 }
 

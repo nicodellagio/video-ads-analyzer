@@ -52,11 +52,25 @@ export async function POST(request: NextRequest) {
     } catch (error) {
       console.error('Extraction failed:', error);
       
+      // Formater l'erreur de manière plus détaillée
+      let errorMessage = 'Erreur inconnue';
+      
+      if (error instanceof Error) {
+        errorMessage = error.message;
+      } else if (typeof error === 'object' && error !== null) {
+        try {
+          errorMessage = JSON.stringify(error);
+        } catch (e) {
+          errorMessage = 'Erreur non sérialisable';
+        }
+      } else {
+        errorMessage = String(error);
+      }
+      
       // Vérifier si l'erreur est liée à Cloudinary
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      if (errorMessage.includes('Cloudinary')) {
+      if (errorMessage.includes('Cloudinary') || errorMessage.includes('cloudinary')) {
         return NextResponse.json(
-          { error: `Erreur Cloudinary: ${errorMessage}` },
+          { error: errorMessage },
           { status: 400 }
         );
       }
@@ -68,8 +82,24 @@ export async function POST(request: NextRequest) {
     }
   } catch (error) {
     console.error('Error processing request:', error);
+    
+    // Formater l'erreur de manière plus détaillée
+    let errorMessage = 'Erreur inconnue';
+    
+    if (error instanceof Error) {
+      errorMessage = error.message;
+    } else if (typeof error === 'object' && error !== null) {
+      try {
+        errorMessage = JSON.stringify(error);
+      } catch (e) {
+        errorMessage = 'Erreur non sérialisable';
+      }
+    } else {
+      errorMessage = String(error);
+    }
+    
     return NextResponse.json(
-      { error: `Error processing request: ${(error as Error).message}` },
+      { error: `Error processing request: ${errorMessage}` },
       { status: 500 }
     );
   }
