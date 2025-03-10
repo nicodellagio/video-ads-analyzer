@@ -110,8 +110,58 @@ export async function uploadVideoFromUrlViaProxy(url: string, source: string, op
     // Générer un ID unique pour la vidéo
     const videoId = options.public_id || uuidv4();
     
-    // Utiliser l'API Cloudinary directement avec fetch_url
-    // Cette approche permet à Cloudinary de gérer l'extraction de la vidéo
+    // Traitement spécial pour Facebook Ads Library
+    if (url.includes('facebook.com/ads/library')) {
+      console.log('URL Facebook Ads Library détectée, extraction de l\'ID de l\'annonce');
+      
+      // Extraire l'ID de l'annonce de l'URL
+      const adIdMatch = url.match(/id=(\d+)/);
+      if (!adIdMatch) {
+        throw new Error('Impossible d\'extraire l\'ID de l\'annonce Facebook');
+      }
+      
+      const adId = adIdMatch[1];
+      console.log(`ID de l'annonce Facebook: ${adId}`);
+      
+      // Utiliser l'API SaveFrom.net pour extraire la vidéo
+      const videoUrl = await extractVideoUrlWithSaveFrom(`https://www.facebook.com/ads/library/?id=${adId}`);
+      
+      if (!videoUrl) {
+        throw new Error('Impossible d\'extraire l\'URL de la vidéo Facebook Ads Library');
+      }
+      
+      console.log(`URL de vidéo extraite: ${videoUrl}`);
+      
+      // Uploader la vidéo vers Cloudinary
+      return await uploadVideoFromUrl(videoUrl, {
+        public_id: videoId,
+        folder: `video-ads-facebook`,
+        ...options
+      });
+    }
+    
+    // Traitement spécial pour Instagram
+    if (url.includes('instagram.com')) {
+      console.log('URL Instagram détectée, utilisation de SaveFrom.net');
+      
+      // Utiliser l'API SaveFrom.net pour extraire la vidéo
+      const videoUrl = await extractVideoUrlWithSaveFrom(url);
+      
+      if (!videoUrl) {
+        throw new Error('Impossible d\'extraire l\'URL de la vidéo Instagram');
+      }
+      
+      console.log(`URL de vidéo extraite: ${videoUrl}`);
+      
+      // Uploader la vidéo vers Cloudinary
+      return await uploadVideoFromUrl(videoUrl, {
+        public_id: videoId,
+        folder: `video-ads-instagram`,
+        ...options
+      });
+    }
+    
+    // Pour les autres URLs, essayer d'abord l'upload direct via Cloudinary
     try {
       console.log('Utilisation de l\'API Cloudinary avec fetch_url');
       
@@ -145,94 +195,37 @@ export async function uploadVideoFromUrlViaProxy(url: string, source: string, op
     } catch (cloudinaryError) {
       console.error('Erreur lors de l\'upload direct via Cloudinary:', cloudinaryError);
       
-      // Si l'upload direct échoue, essayer avec un service d'extraction externe
-      console.log('Tentative avec un service d\'extraction externe...');
+      // Si l'upload direct échoue, essayer avec SaveFrom.net
+      console.log('Tentative avec SaveFrom.net...');
       
-      // Utiliser un service d'extraction de vidéos public
-      // Nous utilisons RapidAPI YouTube Downloader comme exemple
-      const rapidApiUrl = 'https://youtube-media-downloader.p.rapidapi.com/v2/video/details';
-      const encodedUrl = encodeURIComponent(url);
+      const videoUrl = await extractVideoUrlWithSaveFrom(url);
       
-      const rapidApiOptions = {
-        method: 'GET',
-        headers: {
-          'X-RapidAPI-Key': process.env.RAPIDAPI_KEY || '7c0d65c688msh5e2c8e200a9e5a9p1e9c9djsn5a2be5d2fd7d',
-          'X-RapidAPI-Host': 'youtube-media-downloader.p.rapidapi.com'
-        }
-      };
-      
-      console.log(`Appel du service RapidAPI pour: ${url}`);
-      
-      try {
-        const response = await fetch(`${rapidApiUrl}?url=${encodedUrl}`, rapidApiOptions);
-        
-        if (!response.ok) {
-          throw new Error(`Erreur RapidAPI: ${response.status} ${response.statusText}`);
-        }
-        
-        const data = await response.json();
-        
-        if (!data.url && !data.formats && !data.streamingData) {
-          throw new Error('Le service RapidAPI n\'a pas retourné d\'URL de vidéo');
-        }
-        
-        // Extraire l'URL de la vidéo de la réponse
-        let videoUrl = null;
-        
-        if (data.url) {
-          videoUrl = data.url;
-        } else if (data.formats && data.formats.length > 0) {
-          // Prendre le format avec la meilleure qualité
-          const bestFormat = data.formats.sort((a, b) => (b.height || 0) - (a.height || 0))[0];
-          videoUrl = bestFormat.url;
-        } else if (data.streamingData && data.streamingData.formats && data.streamingData.formats.length > 0) {
-          // Format YouTube
-          const bestFormat = data.streamingData.formats.sort((a, b) => (b.height || 0) - (a.height || 0))[0];
-          videoUrl = bestFormat.url;
-        }
-        
-        if (!videoUrl) {
-          throw new Error('Impossible d\'extraire l\'URL de la vidéo de la réponse RapidAPI');
-        }
-        
-        console.log(`URL de vidéo extraite: ${videoUrl}`);
-        
-        // Uploader la vidéo vers Cloudinary
-        const result = await cloudinary.uploader.upload(videoUrl, {
-          resource_type: 'video',
-          public_id: videoId,
-          folder: `video-ads-${source}`,
-          ...options
-        });
-        
-        console.log('Cloudinary upload result:', result);
-        
-        return {
-          id: result.public_id,
-          url: result.secure_url,
-          format: result.format,
-          duration: result.duration || 0,
-          width: result.width,
-          height: result.height,
-          size: result.bytes,
-          originalName: options.public_id || url.split('/').pop() || 'video'
-        };
-      } catch (rapidApiError) {
-        console.error('Erreur lors de l\'extraction via RapidAPI:', rapidApiError);
-        
-        // Si RapidAPI échoue, essayer avec un service de secours
-        console.log('Tentative avec un service de secours...');
-        
-        // Utiliser un service de secours (simulé ici)
-        // Dans un cas réel, vous pourriez utiliser un autre service d'extraction
-        if (source === 'meta' || url.includes('facebook.com')) {
-          throw new Error('L\'extraction de vidéos Facebook nécessite un service d\'extraction spécialisé. Veuillez utiliser l\'URL directe de la vidéo.');
-        } else if (source === 'instagram' || url.includes('instagram.com')) {
-          throw new Error('L\'extraction de vidéos Instagram nécessite un service d\'extraction spécialisé. Veuillez utiliser l\'URL directe de la vidéo.');
-        } else {
-          throw new Error(`Impossible d'extraire la vidéo depuis ${url}. Veuillez utiliser l'URL directe de la vidéo.`);
-        }
+      if (!videoUrl) {
+        throw new Error(`Impossible d'extraire l'URL de la vidéo depuis ${url}`);
       }
+      
+      console.log(`URL de vidéo extraite: ${videoUrl}`);
+      
+      // Uploader la vidéo vers Cloudinary
+      const result = await cloudinary.uploader.upload(videoUrl, {
+        resource_type: 'video',
+        public_id: videoId,
+        folder: `video-ads-${source}`,
+        ...options
+      });
+      
+      console.log('Cloudinary upload result:', result);
+      
+      return {
+        id: result.public_id,
+        url: result.secure_url,
+        format: result.format,
+        duration: result.duration || 0,
+        width: result.width,
+        height: result.height,
+        size: result.bytes,
+        originalName: options.public_id || url.split('/').pop() || 'video'
+      };
     }
   } catch (error) {
     console.error('Erreur lors de l\'upload via proxy:', error);
@@ -253,6 +246,66 @@ export async function uploadVideoFromUrlViaProxy(url: string, source: string, op
     }
     
     throw new Error(`Erreur lors de l'upload via proxy: ${errorMessage}`);
+  }
+}
+
+/**
+ * Extrait l'URL directe d'une vidéo à partir d'une URL de page web
+ * en utilisant l'API SaveFrom.net
+ */
+async function extractVideoUrlWithSaveFrom(url: string): Promise<string | null> {
+  try {
+    console.log(`Extraction de l'URL de vidéo avec SaveFrom.net pour: ${url}`);
+    
+    // Utiliser l'API SaveFrom.net
+    const saveFromUrl = `https://worker.sf-tools.com/savefrom.php?url=${encodeURIComponent(url)}`;
+    
+    console.log(`Appel de l'API SaveFrom.net: ${saveFromUrl}`);
+    
+    const response = await fetch(saveFromUrl, {
+      method: 'GET',
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+        'Accept': 'application/json',
+        'Origin': 'https://en.savefrom.net',
+        'Referer': 'https://en.savefrom.net/'
+      }
+    });
+    
+    if (!response.ok) {
+      console.error(`Erreur SaveFrom.net: ${response.status} ${response.statusText}`);
+      return null;
+    }
+    
+    const data = await response.json();
+    console.log('Réponse SaveFrom.net:', data);
+    
+    // Extraire l'URL de la vidéo de la réponse
+    if (data && data.url) {
+      return data.url;
+    }
+    
+    if (data && data.urls && data.urls.length > 0) {
+      // Prendre l'URL avec la meilleure qualité
+      const bestUrl = data.urls.sort((a, b) => (b.quality || 0) - (a.quality || 0))[0];
+      return bestUrl.url;
+    }
+    
+    if (data && data.info && data.info.url) {
+      return data.info.url;
+    }
+    
+    if (data && data.links && data.links.length > 0) {
+      // Prendre l'URL avec la meilleure qualité
+      const bestLink = data.links.sort((a, b) => (b.quality || 0) - (a.quality || 0))[0];
+      return bestLink.url || bestLink.link || bestLink.hd || bestLink.sd;
+    }
+    
+    console.error('Format de réponse SaveFrom.net non reconnu:', data);
+    return null;
+  } catch (error) {
+    console.error('Erreur lors de l\'extraction avec SaveFrom.net:', error);
+    return null;
   }
 }
 

@@ -44,6 +44,17 @@ export async function extractVideoFromUrl(options: ExtractionOptions): Promise<V
     throw new Error(`URL invalide for the source ${source}`);
   }
   
+  // Vérifier si l'URL est une URL Facebook ou Instagram
+  if (isServerless) {
+    if ((source === 'meta' || url.includes('facebook.com')) && !url.includes('fbcdn.net')) {
+      throw new Error('L\'extraction de vidéos Facebook n\'est pas prise en charge en environnement serverless. Veuillez télécharger directement la vidéo depuis votre ordinateur.');
+    }
+    
+    if ((source === 'instagram' || url.includes('instagram.com')) && !url.includes('cdninstagram.com')) {
+      throw new Error('L\'extraction de vidéos Instagram n\'est pas prise en charge en environnement serverless. Veuillez télécharger directement la vidéo depuis votre ordinateur.');
+    }
+  }
+  
   try {
     // En environnement serverless (Vercel), utiliser Cloudinary
     if (isServerless) {

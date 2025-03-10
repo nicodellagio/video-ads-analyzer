@@ -30,6 +30,31 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Vérifier si l'URL est une URL Facebook ou Instagram
+    if (isServerless) {
+      if ((source === 'meta' || url.includes('facebook.com')) && !url.includes('fbcdn.net')) {
+        return NextResponse.json(
+          { 
+            error: 'L\'extraction de vidéos Facebook n\'est pas prise en charge en environnement serverless.',
+            details: 'Les restrictions de sécurité de Facebook empêchent l\'extraction automatique de vidéos.',
+            help: 'Veuillez télécharger directement la vidéo depuis votre ordinateur en utilisant le bouton "Télécharger" en haut de la page.'
+          },
+          { status: 400 }
+        );
+      }
+      
+      if ((source === 'instagram' || url.includes('instagram.com')) && !url.includes('cdninstagram.com')) {
+        return NextResponse.json(
+          { 
+            error: 'L\'extraction de vidéos Instagram n\'est pas prise en charge en environnement serverless.',
+            details: 'Les restrictions de sécurité d\'Instagram empêchent l\'extraction automatique de vidéos.',
+            help: 'Veuillez télécharger directement la vidéo depuis votre ordinateur en utilisant le bouton "Télécharger" en haut de la page.'
+          },
+          { status: 400 }
+        );
+      }
+    }
+
     // Extract video based on source
     try {
       let videoMetadata;
@@ -71,18 +96,18 @@ export async function POST(request: NextRequest) {
       if (errorMessage.includes('Facebook') || (source === 'meta' && errorMessage.includes('extraction'))) {
         return NextResponse.json(
           { 
-            error: 'Impossible d\'extraire la vidéo Facebook. Veuillez utiliser l\'URL directe de la vidéo plutôt que l\'URL de la page.',
+            error: 'Impossible d\'extraire la vidéo Facebook.',
             details: errorMessage,
-            help: 'Pour obtenir l\'URL directe d\'une vidéo Facebook, cliquez avec le bouton droit sur la vidéo et sélectionnez "Copier l\'adresse de la vidéo" ou "Copier l\'URL de la vidéo".'
+            help: 'Veuillez télécharger directement la vidéo depuis votre ordinateur en utilisant le bouton "Télécharger" en haut de la page.'
           },
           { status: 400 }
         );
       } else if (errorMessage.includes('Instagram') || (source === 'instagram' && errorMessage.includes('extraction'))) {
         return NextResponse.json(
           { 
-            error: 'Impossible d\'extraire la vidéo Instagram. Veuillez utiliser l\'URL directe de la vidéo plutôt que l\'URL de la page.',
+            error: 'Impossible d\'extraire la vidéo Instagram.',
             details: errorMessage,
-            help: 'Pour obtenir l\'URL directe d\'une vidéo Instagram, vous pouvez utiliser des outils en ligne comme "Instagram Video Downloader" pour obtenir l\'URL directe.'
+            help: 'Veuillez télécharger directement la vidéo depuis votre ordinateur en utilisant le bouton "Télécharger" en haut de la page.'
           },
           { status: 400 }
         );
@@ -91,7 +116,7 @@ export async function POST(request: NextRequest) {
           { 
             error: 'Erreur lors du téléchargement de la vidéo vers Cloudinary.',
             details: errorMessage,
-            help: 'Assurez-vous que l\'URL pointe directement vers un fichier vidéo et non vers une page web contenant une vidéo.'
+            help: 'Veuillez télécharger directement la vidéo depuis votre ordinateur en utilisant le bouton "Télécharger" en haut de la page.'
           },
           { status: 400 }
         );
@@ -101,7 +126,7 @@ export async function POST(request: NextRequest) {
         { 
           error: `Impossible d'extraire la vidéo.`,
           details: errorMessage,
-          help: 'Essayez d\'utiliser l\'URL directe de la vidéo plutôt que l\'URL de la page.'
+          help: 'Veuillez télécharger directement la vidéo depuis votre ordinateur en utilisant le bouton "Télécharger" en haut de la page.'
         },
         { status: 500 }
       );
@@ -128,7 +153,7 @@ export async function POST(request: NextRequest) {
       { 
         error: `Erreur lors du traitement de la requête.`,
         details: errorMessage,
-        help: 'Veuillez vérifier l\'URL et réessayer.'
+        help: 'Veuillez télécharger directement la vidéo depuis votre ordinateur en utilisant le bouton "Télécharger" en haut de la page.'
       },
       { status: 500 }
     );
