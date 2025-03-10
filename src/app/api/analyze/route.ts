@@ -251,36 +251,25 @@ function extractSection(text: string, sectionName: string): string {
   return '';
 }
 
+// Fonction pour extraire les puces d'une section
 function extractBulletPoints(sectionText: string): string[] {
   if (!sectionText) return [];
   
   // Supprimer le titre de la section
   const textWithoutTitle = sectionText.replace(/^\*\*[^*]+\*\*:\s*/m, '');
   
-  // Diviser le texte par lignes
-  const lines = textWithoutTitle.split('\n');
+  // Extraire les lignes commençant par un tiret
+  const bulletRegex = /(?:^|\n)\s*-\s*([^\n]+)/g;
+  const bullets: string[] = [];
   
-  // Trouver les lignes qui commencent par un tiret (-)
-  const bulletPoints = lines
-    .filter(line => line.trim().startsWith('-'))
-    .map(line => line.trim().substring(1).trim()) // Supprimer le tiret et les espaces au début
-    .filter(line => line.length > 0); // Éliminer les lignes vides
-  
-  if (bulletPoints.length > 0) {
-    return bulletPoints;
+  let match;
+  while ((match = bulletRegex.exec(textWithoutTitle)) !== null) {
+    if (match[1] && match[1].trim()) {
+      bullets.push(match[1].trim());
+    }
   }
   
-  // Si aucun point n'est trouvé avec des tirets, essayer de trouver des paragraphes distincts
-  const paragraphs = textWithoutTitle
-    .split(/\n\s*\n/)
-    .map(p => p.trim())
-    .filter(p => p.length > 0 && !p.startsWith('**'));
-  
-  if (paragraphs.length > 0) {
-    return paragraphs;
-  }
-  
-  return [];
+  return bullets;
 }
 
 function formatSectionForDisplay(text: string): string {
@@ -303,21 +292,52 @@ function formatSectionForDisplay(text: string): string {
 
 // Fonction pour calculer un score basé sur le contenu de la section
 function calculateScore(sectionText: string): number {
-  // Recherche de mots positifs et négatifs pour évaluer le sentiment
-  const positiveWords = ['excellent', 'effective', 'clear', 'strong', 'compelling', 'engaging', 'successful', 'impressive'];
-  const negativeWords = ['poor', 'weak', 'unclear', 'ineffective', 'confusing', 'lacking', 'missing', 'inadequate'];
+  if (!sectionText) return 0;
   
-  let score = 0.7; // Score de base
+  // Rechercher des mots-clés positifs et négatifs
+  const positiveKeywords = [
+    'excellent', 'efficace', 'clair', 'fort', 'puissant', 'convaincant',
+    'persuasif', 'engageant', 'mémorable', 'impactant', 'réussi', 'bien',
+    'effective', 'clear', 'strong', 'powerful', 'compelling', 'persuasive',
+    'engaging', 'memorable', 'impactful', 'successful', 'good', 'great'
+  ];
   
-  // Ajuster le score en fonction des mots positifs et négatifs
-  positiveWords.forEach(word => {
-    if (sectionText.toLowerCase().includes(word)) score += 0.05;
-  });
+  const negativeKeywords = [
+    'faible', 'confus', 'vague', 'inefficace', 'peu clair', 'manque',
+    'pourrait être amélioré', 'limité', 'weak', 'confusing', 'vague',
+    'ineffective', 'unclear', 'lacks', 'could be improved', 'limited'
+  ];
   
-  negativeWords.forEach(word => {
-    if (sectionText.toLowerCase().includes(word)) score -= 0.1;
-  });
+  // Compter les occurrences
+  let positiveCount = 0;
+  let negativeCount = 0;
   
-  // Limiter le score entre 0.1 et 0.95
-  return Math.max(0.1, Math.min(0.95, score));
+  for (const keyword of positiveKeywords) {
+    const regex = new RegExp(`\\b${keyword}\\b`, 'gi');
+    const matches = sectionText.match(regex);
+    if (matches) {
+      positiveCount += matches.length;
+    }
+  }
+  
+  for (const keyword of negativeKeywords) {
+    const regex = new RegExp(`\\b${keyword}\\b`, 'gi');
+    const matches = sectionText.match(regex);
+    if (matches) {
+      negativeCount += matches.length;
+    }
+  }
+  
+  // Calculer le score (base 5 avec ajustement selon les mots-clés)
+  let baseScore = 3; // Score moyen par défaut
+  
+  // Ajuster en fonction des mots-clés trouvés
+  if (positiveCount > negativeCount) {
+    baseScore += Math.min(2, (positiveCount - negativeCount) * 0.5);
+  } else if (negativeCount > positiveCount) {
+    baseScore -= Math.min(2, (negativeCount - positiveCount) * 0.5);
+  }
+  
+  // Arrondir à une décimale
+  return Math.round(baseScore * 10) / 10;
 } 

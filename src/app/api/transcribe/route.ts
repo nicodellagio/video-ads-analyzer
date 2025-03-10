@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { join } from 'path';
 import { existsSync } from 'fs';
-import { transcribeVideo, TranscriptionResult } from '@/lib/utils/transcription';
+import { transcribeVideo } from '@/lib/utils/transcription';
 import { getVideoPath } from '@/lib/utils/video';
 
 /**

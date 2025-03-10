@@ -25,7 +25,6 @@ import {
   VolumeX,
   Loader2,
   CheckCircle2,
-  Brain,
   Share2,
   Maximize2,
   AlertCircle,
@@ -93,7 +92,6 @@ export default function VideoAdAnalysis() {
   // Utiliser le contexte d'analyse
   const {
     videoUrl,
-    videoSource,
     uploadedFile,
     isProcessing,
     isAnalyzed,
@@ -110,7 +108,6 @@ export default function VideoAdAnalysis() {
     isAnalysisDone,
     
     setVideoUrl,
-    setVideoSource,
     setUploadedFile,
     processVideoUrl,
     processUploadedFile,
@@ -139,7 +136,6 @@ export default function VideoAdAnalysis() {
     if (transcription && transcription.language) {
       // Définir la langue sélectionnée sur la langue détectée
       const detectedLang = transcription.language.substring(0, 2) as LanguageCode;
-      console.log(`Langue détectée dans la transcription: ${detectedLang}`);
       setSelectedLanguage(detectedLang);
     }
   }, [transcription]);
@@ -406,7 +402,6 @@ export default function VideoAdAnalysis() {
   // Mettre à jour la source vidéo lorsque l'onglet change
   const handleTabChange = (value: string) => {
     setCurrentTab(value);
-    setVideoSource(value as any);
   }
 
   // Fermer le message d'erreur
@@ -438,7 +433,7 @@ export default function VideoAdAnalysis() {
         handleExport('gdocs');
       }, 1000);
     }
-  }, [isAnalyzed, transcription, analysis]);
+  }, [isAnalyzed, transcription, analysis, handleExport]);
 
   // Ajout de la fonction handleLoadedMetadata pour récupérer les métadonnées réelles de la vidéo
   const handleLoadedMetadata = (e: React.SyntheticEvent<HTMLVideoElement>) => {
@@ -467,6 +462,21 @@ export default function VideoAdAnalysis() {
     }
     setRealMetadata({ duration, format: format || '', size: size || '' });
   };
+
+  // Mettre à jour la source vidéo lorsque l'URL change
+  useEffect(() => {
+    if (videoRef.current) {
+      const updateTime = () => {
+        setCurrentTime(videoRef.current?.currentTime || 0);
+      };
+      
+      videoRef.current.addEventListener('timeupdate', updateTime);
+      
+      return () => {
+        videoRef.current?.removeEventListener('timeupdate', updateTime);
+      };
+    }
+  }, []);
 
   return (
     <div className="min-h-screen bg-white text-black">

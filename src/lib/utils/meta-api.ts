@@ -38,7 +38,6 @@ async function extractVideoWithYoutubeDl(url: string): Promise<MetaVideoInfo> {
     const { exec } = await import('child_process');
     const { promisify } = await import('util');
     const fs = await import('fs');
-    const path = await import('path');
     const { readdir } = await import('fs/promises');
     const execAsync = promisify(exec);
     

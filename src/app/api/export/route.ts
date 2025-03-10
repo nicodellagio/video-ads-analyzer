@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { jsPDF } from 'jspdf';
-// @ts-ignore - importer jspdf-autotable sans erreurs TypeScript
+// @ts-expect-error - importer jspdf-autotable sans erreurs TypeScript
 import 'jspdf-autotable';
 import { createGoogleDoc } from '@/lib/services/google-docs';
 
@@ -10,7 +10,7 @@ function decodeHtmlEntities(text: string) {
   try {
     const textArea = new TextDecoder('utf-8');
     return textArea.decode(new TextEncoder().encode(text));
-  } catch (error) {
+  } catch {
     // Fallback pour les environnements où TextEncoder/Decoder ne sont pas disponibles
     return text;
   }
@@ -42,7 +42,7 @@ export async function POST(request: NextRequest) {
     }
 
     let exportUrl = '';
-    let exportId = 'export_' + Math.random().toString(36).substring(2, 15);
+    const exportId = 'export_' + Math.random().toString(36).substring(2, 15);
     
     if (format === 'pdf') {
       // Utiliser jsPDF pour générer un PDF réel
