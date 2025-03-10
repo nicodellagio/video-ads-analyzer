@@ -12,6 +12,10 @@ const nextConfig = {
   typescript: {
     ignoreBuildErrors: true,
   },
+  // Configuration des fonctions serverless
+  serverRuntimeConfig: {
+    maxDuration: 60, // 60 secondes maximum pour les fonctions serverless
+  },
   serverExternalPackages: [
     'fluent-ffmpeg',
     '@ffprobe-installer/ffprobe',

@@ -1,0 +1,35 @@
+{
+  "functions": {
+    "api/extract.js": {
+      "maxDuration": 60
+    },
+    "api/analyze.js": {
+      "maxDuration": 60
+    },
+    "api/transcribe.js": {
+      "maxDuration": 60
+    },
+    "api/translate.js": {
+      "maxDuration": 60
+    },
+    "api/export.js": {
+      "maxDuration": 60
+    },
+    "api/upload.js": {
+      "maxDuration": 60
+    },
+    "api/auth/google.js": {
+      "maxDuration": 60
+    },
+    "api/auth/google/callback.js": {
+      "maxDuration": 60
+    },
+    "api/auth/google/simulate.js": {
+      "maxDuration": 60
+    }
+  },
+  "buildCommand": "next build",
+  "devCommand": "next dev",
+  "installCommand": "npm install",
+  "outputDirectory": ".next"
+} 
