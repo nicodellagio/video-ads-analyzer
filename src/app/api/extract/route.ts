@@ -67,16 +67,42 @@ export async function POST(request: NextRequest) {
         errorMessage = String(error);
       }
       
-      // Vérifier si l'erreur est liée à Cloudinary
-      if (errorMessage.includes('Cloudinary') || errorMessage.includes('cloudinary')) {
+      // Messages d'erreur spécifiques pour aider l'utilisateur
+      if (errorMessage.includes('Facebook') || (source === 'meta' && errorMessage.includes('extraction'))) {
         return NextResponse.json(
-          { error: errorMessage },
+          { 
+            error: 'Impossible d\'extraire la vidéo Facebook. Veuillez utiliser l\'URL directe de la vidéo plutôt que l\'URL de la page.',
+            details: errorMessage,
+            help: 'Pour obtenir l\'URL directe d\'une vidéo Facebook, cliquez avec le bouton droit sur la vidéo et sélectionnez "Copier l\'adresse de la vidéo" ou "Copier l\'URL de la vidéo".'
+          },
+          { status: 400 }
+        );
+      } else if (errorMessage.includes('Instagram') || (source === 'instagram' && errorMessage.includes('extraction'))) {
+        return NextResponse.json(
+          { 
+            error: 'Impossible d\'extraire la vidéo Instagram. Veuillez utiliser l\'URL directe de la vidéo plutôt que l\'URL de la page.',
+            details: errorMessage,
+            help: 'Pour obtenir l\'URL directe d\'une vidéo Instagram, vous pouvez utiliser des outils en ligne comme "Instagram Video Downloader" pour obtenir l\'URL directe.'
+          },
+          { status: 400 }
+        );
+      } else if (errorMessage.includes('Cloudinary')) {
+        return NextResponse.json(
+          { 
+            error: 'Erreur lors du téléchargement de la vidéo vers Cloudinary.',
+            details: errorMessage,
+            help: 'Assurez-vous que l\'URL pointe directement vers un fichier vidéo et non vers une page web contenant une vidéo.'
+          },
           { status: 400 }
         );
       }
       
       return NextResponse.json(
-        { error: `Unable to extract video: ${errorMessage}` },
+        { 
+          error: `Impossible d'extraire la vidéo.`,
+          details: errorMessage,
+          help: 'Essayez d\'utiliser l\'URL directe de la vidéo plutôt que l\'URL de la page.'
+        },
         { status: 500 }
       );
     }
@@ -99,7 +125,11 @@ export async function POST(request: NextRequest) {
     }
     
     return NextResponse.json(
-      { error: `Error processing request: ${errorMessage}` },
+      { 
+        error: `Erreur lors du traitement de la requête.`,
+        details: errorMessage,
+        help: 'Veuillez vérifier l\'URL et réessayer.'
+      },
       { status: 500 }
     );
   }
