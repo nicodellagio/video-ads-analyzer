@@ -10,7 +10,8 @@ export async function POST(request: NextRequest) {
   try {
     // Retrieve request data
     const data = await request.json();
-    const { url, source } = data;
+    const { url: originalUrl, source } = data;
+    let url = originalUrl;
 
     console.log('Extraction requested for:', { url, source });
 
@@ -32,10 +33,30 @@ export async function POST(request: NextRequest) {
 
     // Vérifier si l'URL est une URL Facebook Ads Library
     if (source === 'meta' && url.includes('facebook.com/ads/library')) {
-      return NextResponse.json(
-        { error: 'Les URLs Facebook Ads Library ne sont pas directement supportées. Veuillez utiliser l\'URL directe de la vidéo.' },
-        { status: 400 }
-      );
+      console.log('URL Facebook Ads Library détectée, tentative d\'extraction via RapidAPI');
+      
+      // Extraire l'ID de l'annonce (format: facebook.com/ads/library/?id=XXXXXX)
+      let adId = '';
+      try {
+        const urlObj = new URL(url);
+        adId = urlObj.searchParams.get('id') || '';
+        
+        if (!adId) {
+          return NextResponse.json(
+            { error: 'Impossible d\'extraire l\'ID de l\'annonce depuis l\'URL' },
+            { status: 400 }
+          );
+        }
+        
+        // Remplacer l'URL par l'URL directe de Facebook Ads Archive
+        url = `https://www.facebook.com/ads/archive/render_ad/?id=${adId}`;
+        console.log('URL transformée pour extraction:', url);
+      } catch (error) {
+        return NextResponse.json(
+          { error: 'URL Facebook Ads Library invalide' },
+          { status: 400 }
+        );
+      }
     }
 
     // Extract video based on source
