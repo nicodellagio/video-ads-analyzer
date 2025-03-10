@@ -2,9 +2,10 @@ import { join } from 'path';
 import { writeFile } from 'fs/promises';
 import { v4 as uuidv4 } from 'uuid';
 import { ensureUploadDir, extractVideoMetadata, UPLOAD_DIR, UPLOAD_URL_PATH } from './video';
-import { getFacebookVideoInfo, getInstagramVideoInfo, downloadVideo } from './meta-api';
+import { getFacebookVideoInfo, getInstagramVideoInfo } from './meta-api';
 import type { VideoMetadata } from './video';
 import { isServerless } from '@/lib/config/environment';
+import { uploadVideoFromUrl, formatFileSize } from '@/lib/services/cloudinary';
 
 // Types de sources vidéo supportées
 export type VideoSource = 'instagram' | 'meta' | 'youtube' | 'tiktok';
@@ -26,7 +27,7 @@ export function validateUrl(url: string): boolean {
 }
 
 /**
- * Extrait une vidéo à partir d'une URL en utilisant yt-dlp
+ * Extrait une vidéo à partir d'une URL en utilisant Cloudinary ou yt-dlp
  * @param options Options d'extraction (url, source)
  * @returns Métadonnées de la vidéo extraite
  */
@@ -44,11 +45,33 @@ export async function extractVideoFromUrl(options: ExtractionOptions): Promise<V
   }
   
   try {
-    // En environnement serverless, nous ne pouvons pas utiliser yt-dlp
+    // En environnement serverless (Vercel), utiliser Cloudinary
     if (isServerless) {
-      throw new Error('L\'extraction de vidéos n\'est pas disponible en environnement serverless');
+      console.log('Utilisation de Cloudinary pour l\'extraction de vidéo en environnement serverless');
+      
+      // Générer un ID unique pour la vidéo
+      const videoId = uuidv4();
+      
+      // Uploader la vidéo vers Cloudinary
+      const cloudinaryResult = await uploadVideoFromUrl(url, {
+        public_id: videoId,
+        folder: 'video-ads'
+      });
+      
+      // Convertir le résultat au format VideoMetadata
+      return {
+        id: videoId,
+        url: cloudinaryResult.url,
+        duration: cloudinaryResult.duration.toString(),
+        format: `${cloudinaryResult.width}x${cloudinaryResult.height}`,
+        size: formatFileSize(cloudinaryResult.size),
+        originalName: cloudinaryResult.originalName,
+        width: cloudinaryResult.width,
+        height: cloudinaryResult.height
+      };
     }
 
+    // En environnement local, utiliser yt-dlp
     // Importer les modules côté serveur uniquement
     const { exec } = await import('child_process');
     const { promisify } = await import('util');
@@ -182,12 +205,33 @@ export async function extractFacebookVideo(url: string): Promise<VideoMetadata> 
   }
   
   try {
-    // Importer les modules côté serveur uniquement
-    const fs = await import('fs');
+    // En environnement serverless (Vercel), utiliser Cloudinary
+    if (isServerless) {
+      console.log('Utilisation de Cloudinary pour l\'extraction de vidéo Facebook en environnement serverless');
+      
+      // Générer un ID unique pour la vidéo
+      const videoId = uuidv4();
+      
+      // Uploader la vidéo vers Cloudinary
+      const cloudinaryResult = await uploadVideoFromUrl(url, {
+        public_id: videoId,
+        folder: 'video-ads-facebook'
+      });
+      
+      // Convertir le résultat au format VideoMetadata
+      return {
+        id: videoId,
+        url: cloudinaryResult.url,
+        duration: cloudinaryResult.duration.toString(),
+        format: `${cloudinaryResult.width}x${cloudinaryResult.height}`,
+        size: formatFileSize(cloudinaryResult.size),
+        originalName: cloudinaryResult.originalName || `facebook_video_${videoId}`,
+        width: cloudinaryResult.width,
+        height: cloudinaryResult.height
+      };
+    }
     
-    // S'assurer que le dossier de téléchargement existe
-    await ensureUploadDir();
-    
+    // En environnement local, utiliser l'API Meta
     console.log('Extraction of video Facebook from:', url);
     
     // Récupérer les informations de la vidéo via l'API Meta
@@ -208,6 +252,7 @@ export async function extractFacebookVideo(url: string): Promise<VideoMetadata> 
     const publicUrl = videoInfo.url;
     
     // Vérifier si le fichier existe
+    const fs = await import('fs');
     if (!fs.existsSync(outputPath)) {
       throw new Error(`Le fichier vidéo n'existe pas à l'emplacement attendu: ${outputPath}`);
     }
@@ -242,12 +287,33 @@ export async function extractInstagramVideo(url: string): Promise<VideoMetadata>
   }
   
   try {
-    // Importer les modules côté serveur uniquement
-    const fs = await import('fs');
+    // En environnement serverless (Vercel), utiliser Cloudinary
+    if (isServerless) {
+      console.log('Utilisation de Cloudinary pour l\'extraction de vidéo Instagram en environnement serverless');
+      
+      // Générer un ID unique pour la vidéo
+      const videoId = uuidv4();
+      
+      // Uploader la vidéo vers Cloudinary
+      const cloudinaryResult = await uploadVideoFromUrl(url, {
+        public_id: videoId,
+        folder: 'video-ads-instagram'
+      });
+      
+      // Convertir le résultat au format VideoMetadata
+      return {
+        id: videoId,
+        url: cloudinaryResult.url,
+        duration: cloudinaryResult.duration.toString(),
+        format: `${cloudinaryResult.width}x${cloudinaryResult.height}`,
+        size: formatFileSize(cloudinaryResult.size),
+        originalName: cloudinaryResult.originalName || `instagram_video_${videoId}`,
+        width: cloudinaryResult.width,
+        height: cloudinaryResult.height
+      };
+    }
     
-    // S'assurer que le dossier de téléchargement existe
-    await ensureUploadDir();
-    
+    // En environnement local, utiliser l'API Meta
     console.log('Extraction of video Instagram from:', url);
     
     // Récupérer les informations de la vidéo via l'API Meta
@@ -268,6 +334,7 @@ export async function extractInstagramVideo(url: string): Promise<VideoMetadata>
     const publicUrl = videoInfo.url;
     
     // Vérifier si le fichier existe
+    const fs = await import('fs');
     if (!fs.existsSync(outputPath)) {
       throw new Error(`Le fichier vidéo n'existe pas à l'emplacement attendu: ${outputPath}`);
     }

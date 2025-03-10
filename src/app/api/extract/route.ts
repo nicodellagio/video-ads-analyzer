@@ -30,17 +30,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // En environnement serverless (Vercel), nous ne pouvons pas extraire de vidéos
-    if (isServerless) {
-      return NextResponse.json(
-        { 
-          error: 'L\'extraction de vidéos n\'est pas disponible en environnement serverless (Vercel)',
-          message: 'Cette fonctionnalité n\'est disponible qu\'en environnement de développement local'
-        },
-        { status: 501 }
-      );
-    }
-
     // Extract video based on source
     try {
       let videoMetadata;
