@@ -3,6 +3,9 @@ import { existsSync } from 'fs';
 import { transcribeVideo } from '@/lib/utils/transcription';
 import { getVideoPath } from '@/lib/utils/video';
 
+export const maxDuration = 60; // 60 secondes maximum pour le plan hobby de Vercel
+export const dynamic = 'force-dynamic';
+
 /**
  * Handles POST requests for video transcription
  */

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { validateUrl, extractFacebookVideo, extractInstagramVideo } from '@/lib/utils/extractor';
 import type { VideoSource } from '@/lib/utils/extractor';
 
-export const maxDuration = 300; // 5 minutes maximum for processing
+export const maxDuration = 60; // 60 secondes maximum pour le plan hobby de Vercel
 export const dynamic = 'force-dynamic'; // Force dynamic mode to avoid caching
 
 export async function POST(request: NextRequest) {
@@ -22,7 +22,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Validate URL based on source
-    if (!validateUrl(url, source as VideoSource)) {
+    if (!validateUrl(url)) {
       return NextResponse.json(
         { error: `Invalid URL for source ${source}` },
         { status: 400 }
