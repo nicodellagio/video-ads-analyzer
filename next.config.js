@@ -3,6 +3,13 @@ const nextConfig = {
   // Augmenter la taille maximale des assets statiques
   experimental: {
     largePageDataBytes: 128 * 1000, // 128KB
+    serverComponentsExternalPackages: [
+      'fluent-ffmpeg',
+      '@ffprobe-installer/ffprobe',
+      'child_process',
+      '@ffmpeg-installer/ffmpeg',
+      'got'
+    ]
   },
   // Désactiver le linting lors du build
   eslint: {
@@ -12,17 +19,10 @@ const nextConfig = {
   typescript: {
     ignoreBuildErrors: true,
   },
-  // Configuration des fonctions serverless
+  // Configuration des fonctions serverless pour Vercel
   serverRuntimeConfig: {
     maxDuration: 60, // 60 secondes maximum pour les fonctions serverless
   },
-  serverExternalPackages: [
-    'fluent-ffmpeg',
-    '@ffprobe-installer/ffprobe',
-    'child_process',
-    '@ffmpeg-installer/ffmpeg',
-    'got'
-  ],
   webpack: (config, { isServer }) => {
     // Ajouter un fallback pour les modules qui utilisent le browser globals
     if (!isServer) {
