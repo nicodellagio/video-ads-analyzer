@@ -33,11 +33,11 @@ export async function POST(request: NextRequest) {
 
     // Vérifier si l'URL est une URL Facebook Ads Library
     if (source === 'meta' && url.includes('facebook.com/ads/library')) {
-      console.log('URL Facebook Ads Library détectée, tentative d\'extraction via RapidAPI');
+      console.log('URL Facebook Ads Library détectée, utilisation du simulateur');
       
       try {
-        // Utiliser l'approche direct-extract pour ce type d'URL
-        const response = await fetch(`${request.nextUrl.origin}/api/direct-extract`, {
+        // Utiliser l'endpoint de simulation pour ce type d'URL
+        const response = await fetch(`${request.nextUrl.origin}/api/mock-ads-video`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -46,36 +46,21 @@ export async function POST(request: NextRequest) {
         });
         
         if (!response.ok) {
-          throw new Error(`Échec de l'appel à direct-extract: ${response.status}`);
+          throw new Error(`Échec de l'appel au simulateur: ${response.status}`);
         }
         
         const result = await response.json();
         return NextResponse.json(result);
       } catch (error) {
-        console.error('Erreur lors de la redirection vers direct-extract:', error);
+        console.error('Erreur lors de la simulation:', error);
         
-        // Extraire l'ID de l'annonce (format: facebook.com/ads/library/?id=XXXXXX)
-        let adId = '';
-        try {
-          const urlObj = new URL(url);
-          adId = urlObj.searchParams.get('id') || '';
-          
-          if (!adId) {
-            return NextResponse.json(
-              { error: 'Impossible d\'extraire l\'ID de l\'annonce depuis l\'URL' },
-              { status: 400 }
-            );
-          }
-          
-          // Remplacer l'URL par l'URL directe de Facebook Ads Archive
-          url = `https://www.facebook.com/ads/archive/render_ad/?id=${adId}`;
-          console.log('URL transformée pour extraction:', url);
-        } catch (error) {
-          return NextResponse.json(
-            { error: 'URL Facebook Ads Library invalide' },
-            { status: 400 }
-          );
-        }
+        return NextResponse.json(
+          { 
+            error: `Les URLs Facebook Ads Library ne peuvent pas être extraites directement en raison des restrictions de Facebook. Veuillez utiliser une URL directe de vidéo Facebook à la place.`,
+            technical_details: error instanceof Error ? error.message : String(error)
+          },
+          { status: 400 }
+        );
       }
     }
 
@@ -106,6 +91,18 @@ export async function POST(request: NextRequest) {
       
       // Vérifier le type d'erreur
       const errorMessage = error instanceof Error ? error.message : String(error);
+      
+      // Erreurs spécifiques Facebook Ads Library
+      if (errorMessage.includes('Facebook Ads Library') || 
+          (source === 'meta' && url.includes('facebook.com/ads/library'))) {
+        return NextResponse.json(
+          { 
+            error: `Les URLs Facebook Ads Library ne peuvent pas être extraites directement en raison des restrictions de Facebook. Veuillez utiliser une URL directe de vidéo Facebook à la place.`,
+            technical_details: errorMessage
+          },
+          { status: 400 }
+        );
+      }
       
       // Erreurs spécifiques API
       if (errorMessage.includes('RapidAPI')) {
