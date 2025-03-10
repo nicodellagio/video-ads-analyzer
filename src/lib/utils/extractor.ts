@@ -44,17 +44,6 @@ export async function extractVideoFromUrl(options: ExtractionOptions): Promise<V
     throw new Error(`URL invalide for the source ${source}`);
   }
   
-  // Vérifier si l'URL est une URL Facebook ou Instagram
-  if (isServerless) {
-    if ((source === 'meta' || url.includes('facebook.com')) && !url.includes('fbcdn.net')) {
-      throw new Error('L\'extraction de vidéos Facebook n\'est pas prise en charge en environnement serverless. Veuillez télécharger directement la vidéo depuis votre ordinateur.');
-    }
-    
-    if ((source === 'instagram' || url.includes('instagram.com')) && !url.includes('cdninstagram.com')) {
-      throw new Error('L\'extraction de vidéos Instagram n\'est pas prise en charge en environnement serverless. Veuillez télécharger directement la vidéo depuis votre ordinateur.');
-    }
-  }
-  
   try {
     // En environnement serverless (Vercel), utiliser Cloudinary
     if (isServerless) {
@@ -228,14 +217,9 @@ export async function extractFacebookVideo(url: string): Promise<VideoMetadata> 
   }
   
   try {
-    // En environnement serverless (Vercel), utiliser Cloudinary
+    // En environnement serverless (Vercel), utiliser Cloudinary via proxy
     if (isServerless) {
       console.log('Utilisation de Cloudinary pour l\'extraction de vidéo Facebook en environnement serverless');
-      
-      // Vérifier si l'URL est une URL Facebook Ads Library
-      if (url.includes('facebook.com/ads/library')) {
-        console.log('URL Facebook Ads Library détectée, utilisation du proxy pour extraction');
-      }
       
       // Générer un ID unique pour la vidéo
       const videoId = uuidv4();
