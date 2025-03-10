@@ -101,7 +101,7 @@ export async function uploadVideoFromUrlViaProxy(url: string, source: string, op
     const requestOptions = {
       method: 'GET',
       headers: {
-        'x-rapidapi-key': 'f2737c0de4mshf7e328ef87ce454p1bdc04jsn3ad991abfed1',
+        'x-rapidapi-key': process.env.RAPIDAPI_KEY || 'f2737c0de4mshf7e328ef87ce454p1bdc04jsn3ad991abfed1',
         'x-rapidapi-host': apiHost
       }
     };
