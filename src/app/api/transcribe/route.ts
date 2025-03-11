@@ -20,16 +20,20 @@ export async function POST(request: NextRequest) {
     }
 
     console.log(`Request for transcription for the video: ${videoUrl}`);
+    console.log(`Environment: ${USE_S3_STORAGE ? 'Vercel/S3' : 'Local'}`);
 
     // Extract video ID from URL
-    const videoId = videoUrl.split('/').pop()?.split('.')[0];
+    const videoId = videoUrl.split('/').pop()?.split('.')[0]?.split('?')[0];
     
     if (!videoId) {
+      console.error(`Unable to extract video ID from URL: ${videoUrl}`);
       return NextResponse.json(
         { error: 'Unable to extract the video ID from the URL' },
         { status: 400 }
       );
     }
+    
+    console.log(`Extracted video ID: ${videoId}`);
     
     // Get video file path
     const videoPath = getVideoPath(videoId);
@@ -50,9 +54,12 @@ export async function POST(request: NextRequest) {
           { status: 400 }
         );
       }
+      
+      console.log(`Using video URL for S3: ${videoUrl}`);
     } else {
       // Pour le stockage local, vérifier si le fichier existe
       fileExists = existsSync(videoPath);
+      console.log(`Checking local file existence: ${videoPath}, exists: ${fileExists}`);
     }
     
     if (!fileExists) {
@@ -64,8 +71,16 @@ export async function POST(request: NextRequest) {
     }
 
     // Transcribe video with OpenAI Whisper
-    console.log(`Transcription of the video: ${videoId}`);
-    const transcription = await transcribeVideo(videoPath, {
+    console.log(`Starting transcription for video: ${videoId}`);
+    
+    // Dans l'environnement S3, utiliser directement l'URL si disponible
+    const pathForTranscription = USE_S3_STORAGE && videoUrl.startsWith('https://') 
+      ? videoUrl 
+      : videoPath;
+    
+    console.log(`Using path for transcription: ${pathForTranscription}`);
+    
+    const transcription = await transcribeVideo(pathForTranscription, {
       responseFormat: 'verbose_json',
     });
 

@@ -29,50 +29,51 @@ export interface TranscriptionResult {
 }
 
 /**
- * Crée un ReadStream à partir d'un chemin de fichier
- * Gère les cas où le fichier est en local ou sur S3
+ * Récupère le contenu d'un fichier à partir d'un chemin ou d'une URL
+ * Retourne un File ou un Buffer compatible avec l'API OpenAI
  */
-async function createReadStreamFromPath(path: string): Promise<any> {
+async function createReadStreamFromPath(path: string): Promise<File | Buffer> {
   // Vérifier si nous sommes dans un environnement S3/Vercel
   if (USE_S3_STORAGE) {
     try {
-      if (path.startsWith('https://')) {
-        // Utiliser directement l'URL si elle est déjà au format HTTPS
-        // Télécharger le fichier avec fetch pour le passer à l'API OpenAI
-        const response = await fetch(path);
-        const blob = await response.blob();
-        const buffer = Buffer.from(await blob.arrayBuffer());
-        return new Readable({
-          read() {
-            this.push(buffer);
-            this.push(null);
-          }
-        });
-      } else {
-        // Si c'est un ID de fichier, extraire l'ID pour obtenir une URL signée
+      let fileUrl = path;
+      
+      // Si ce n'est pas une URL HTTPS, générer une URL signée pour S3
+      if (!path.startsWith('https://')) {
+        // Extraire l'ID de la vidéo
         const videoId = path.split('/').pop()?.split('.')[0] || path;
         // Générer une URL signée pour S3
         const s3Key = `videos/${videoId}.mp4`;
-        const signedUrl = await getPresignedUrl(s3Key);
-        
-        // Télécharger le fichier avec l'URL signée
-        const response = await fetch(signedUrl);
-        const blob = await response.blob();
-        const buffer = Buffer.from(await blob.arrayBuffer());
-        return new Readable({
-          read() {
-            this.push(buffer);
-            this.push(null);
-          }
-        });
+        fileUrl = await getPresignedUrl(s3Key);
       }
+      
+      console.log(`Téléchargement du fichier depuis ${fileUrl}`);
+      
+      // Télécharger le fichier depuis l'URL
+      const response = await fetch(fileUrl);
+      if (!response.ok) {
+        throw new Error(`Erreur lors du téléchargement du fichier: ${response.status} ${response.statusText}`);
+      }
+      
+      // Convertir la réponse en Blob
+      const blob = await response.blob();
+      
+      // Créer un objet File à partir du Blob (compatible avec l'API OpenAI)
+      // Utiliser un nom de fichier basé sur le chemin original
+      const fileName = path.split('/').pop() || 'audio.mp4';
+      const file = new File([blob], fileName, { type: blob.type || 'video/mp4' });
+      
+      return file;
     } catch (error) {
-      console.error('Error creating stream from S3:', error);
-      throw new Error(`Error creating stream from S3: ${(error as Error).message}`);
+      console.error('Error creating file from S3:', error);
+      throw new Error(`Error creating file from S3: ${(error as Error).message}`);
     }
   } else {
     // Environnement local - utiliser le système de fichiers
-    return createReadStream(path);
+    // Nous devons retourner un Buffer pour l'API OpenAI
+    const fs = await import('fs');
+    const buffer = fs.readFileSync(path);
+    return buffer;
   }
 }
 
@@ -108,9 +109,12 @@ export async function transcribeVideo(
 
     console.log(`Transcription de la vidéo: ${videoPath}`);
 
+    // Récupérer le fichier à envoyer à l'API
+    const fileData = await createReadStreamFromPath(videoPath);
+    
     // Préparer les options de transcription
     const transcriptionOptions: any = {
-      file: await createReadStreamFromPath(videoPath),
+      file: fileData,
       model: 'whisper-1',
       response_format: options.responseFormat || 'verbose_json',
     };
