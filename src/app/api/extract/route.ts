@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { validateUrl, extractFacebookVideo, extractInstagramVideo } from '@/lib/utils/extractor';
 import type { VideoSource } from '@/lib/utils/extractor';
 
-export const maxDuration = 300; // 5 minutes maximum for processing
+export const maxDuration = 60; // 1 minute maximum for processing (Vercel hobby plan limit)
 export const dynamic = 'force-dynamic'; // Force dynamic mode to avoid caching
 
 export async function POST(request: NextRequest) {

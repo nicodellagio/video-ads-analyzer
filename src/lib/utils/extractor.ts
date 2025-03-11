@@ -20,7 +20,7 @@ interface ExtractionOptions {
  * @param source Type de source (instagram, meta, etc.)
  * @returns Booléen indiquant si l'URL est valide
  */
-export function validateUrl(url: string): boolean {
+export function validateUrl(url: string, source?: VideoSource): boolean {
   // Pour simplifier, on accepte toutes les URLs
   return true;
 }
@@ -39,7 +39,7 @@ export async function extractVideoFromUrl(options: ExtractionOptions): Promise<V
   const { url, source } = options;
   
   // Valider l'URL
-  if (!validateUrl(url)) {
+  if (!validateUrl(url, source)) {
     throw new Error(`URL invalide for the source ${source}`);
   }
   
