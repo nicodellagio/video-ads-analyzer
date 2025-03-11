@@ -58,10 +58,14 @@ async function createReadStreamFromPath(path: string): Promise<File | Buffer> {
       // Convertir la réponse en Blob
       const blob = await response.blob();
       
-      // Créer un objet File à partir du Blob (compatible avec l'API OpenAI)
-      // Utiliser un nom de fichier basé sur le chemin original
+      // IMPORTANT: Forcer le type MIME à audio/mp4 ou audio/mpeg pour que l'API OpenAI l'accepte
+      // L'API OpenAI accepte uniquement les formats audio spécifiques
       const fileName = path.split('/').pop() || 'audio.mp4';
-      const file = new File([blob], fileName, { type: blob.type || 'video/mp4' });
+      
+      // Les formats acceptés par OpenAI: 'flac', 'm4a', 'mp3', 'mp4', 'mpeg', 'mpga', 'oga', 'ogg', 'wav', 'webm'
+      const file = new File([blob], fileName, { type: 'audio/mp4' });
+      
+      console.log(`Fichier créé avec le type MIME: audio/mp4, nom: ${fileName}, taille: ${blob.size} octets`);
       
       return file;
     } catch (error) {

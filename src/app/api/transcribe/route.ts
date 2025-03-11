@@ -20,7 +20,7 @@ export async function POST(request: NextRequest) {
     }
 
     console.log(`Request for transcription for the video: ${videoUrl}`);
-    console.log(`Environment: ${USE_S3_STORAGE ? 'Vercel/S3' : 'Local'}`);
+    console.log(`Environment: ${USE_S3_STORAGE ? 'Vercel/S3' : 'Local'}, Source: ${source || 'unknown'}`);
 
     // Extract video ID from URL
     const videoId = videoUrl.split('/').pop()?.split('.')[0]?.split('?')[0];
@@ -73,23 +73,42 @@ export async function POST(request: NextRequest) {
     // Transcribe video with OpenAI Whisper
     console.log(`Starting transcription for video: ${videoId}`);
     
-    // Dans l'environnement S3, utiliser directement l'URL si disponible
-    const pathForTranscription = USE_S3_STORAGE && videoUrl.startsWith('https://') 
-      ? videoUrl 
-      : videoPath;
-    
-    console.log(`Using path for transcription: ${pathForTranscription}`);
-    
-    const transcription = await transcribeVideo(pathForTranscription, {
-      responseFormat: 'verbose_json',
-    });
+    try {
+      // Dans l'environnement S3, utiliser directement l'URL si disponible
+      const pathForTranscription = USE_S3_STORAGE && videoUrl.startsWith('https://') 
+        ? videoUrl 
+        : videoPath;
+      
+      console.log(`Using path for transcription: ${pathForTranscription}`);
+      
+      const transcription = await transcribeVideo(pathForTranscription, {
+        responseFormat: 'verbose_json',
+      });
 
-    console.log(`Transcription completed for the video: ${videoId}`);
+      console.log(`Transcription completed successfully for the video: ${videoId}`);
+      console.log(`Transcription results: language=${transcription.language || 'unknown'}, text length=${transcription.text?.length || 0} chars`);
 
-    // Return transcription results
-    return NextResponse.json(transcription);
+      // Return transcription results
+      return NextResponse.json(transcription);
+    } catch (transcriptionError) {
+      console.error(`Transcription failed for ${videoId}:`, transcriptionError);
+      
+      // Vérifier si l'erreur est liée au format de fichier
+      const errorMsg = (transcriptionError as Error).message || '';
+      if (errorMsg.includes('Invalid file format') || errorMsg.includes('format')) {
+        return NextResponse.json(
+          { 
+            error: `Format de fichier non supporté. L'API de transcription accepte uniquement les formats audio: flac, m4a, mp3, mp4, mpeg, mpga, oga, ogg, wav, webm. Erreur: ${errorMsg}` 
+          },
+          { status: 400 }
+        );
+      }
+      
+      // Renvoyer l'erreur générique
+      throw transcriptionError;
+    }
   } catch (error) {
-    console.error('Error during transcription:', error);
+    console.error('Error during transcription API call:', error);
     return NextResponse.json(
       { error: `Error during transcription: ${(error as Error).message}` },
       { status: 500 }

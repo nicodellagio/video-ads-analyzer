@@ -55,7 +55,7 @@ function bufferToStream(buffer: Buffer): ReadableStream {
 export async function uploadToS3(
   file: File | Buffer,
   key: string,
-  contentType = 'video/mp4'
+  contentType = 'audio/mp4'
 ): Promise<{ url: string; key: string }> {
   try {
     // Vérifier si les identifiants AWS sont définis
@@ -76,12 +76,26 @@ export async function uploadToS3(
       size = file.length;
     }
 
+    // Déterminer le type MIME en fonction de l'extension pour mieux supporter l'API OpenAI
+    let finalContentType = contentType;
+    if (key.toLowerCase().endsWith('.mp4')) {
+      finalContentType = 'audio/mp4';
+    } else if (key.toLowerCase().endsWith('.mp3')) {
+      finalContentType = 'audio/mpeg';
+    } else if (key.toLowerCase().endsWith('.wav')) {
+      finalContentType = 'audio/wav';
+    } else if (key.toLowerCase().endsWith('.ogg')) {
+      finalContentType = 'audio/ogg';
+    }
+
+    console.log(`Uploading to S3 with content type: ${finalContentType}, key: ${key}`);
+
     // Télécharger le fichier sur S3 avec les tags appropriés
     const command = new PutObjectCommand({
       Bucket: bucketName,
       Key: key,
       Body: body,
-      ContentType: contentType,
+      ContentType: finalContentType,
       Tagging: `awsApplication=${encodeURIComponent(AWS_APP_ARN)}`
     });
 
