@@ -1,0 +1,75 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Ressources AWS pour l''application Video Ads Analyzer'
+
+Parameters:
+  ApplicationName:
+    Type: String
+    Default: 'VideoAds_Analyzer'
+    Description: Nom de l'application
+
+  BucketName:
+    Type: String
+    Description: Nom du bucket S3 pour stocker les vidéos
+    Default: 'video-ads-analyzer-storage'
+
+Resources:
+  S3Bucket:
+    Type: 'AWS::S3::Bucket'
+    Properties:
+      BucketName: !Ref BucketName
+      CorsConfiguration:
+        CorsRules:
+          - AllowedHeaders:
+              - '*'
+            AllowedMethods:
+              - GET
+              - PUT
+              - POST
+              - DELETE
+            AllowedOrigins:
+              - '*'
+            ExposedHeaders:
+              - ETag
+            MaxAge: 3000
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: false
+        BlockPublicPolicy: false
+        IgnorePublicAcls: false
+        RestrictPublicBuckets: false
+      Tags:
+        - Key: awsApplication
+          Value: arn:aws:resource-groups:eu-north-1:897722698206:group/VideoAds_Analyzer/08i6plqg6mgngt3xsqar3uqzoj
+
+  BucketPolicy:
+    Type: 'AWS::S3::BucketPolicy'
+    Properties:
+      Bucket: !Ref S3Bucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: PublicReadGetObject
+            Effect: Allow
+            Principal: '*'
+            Action:
+              - 's3:GetObject'
+            Resource: !Join 
+              - ''
+              - - 'arn:aws:s3:::'
+                - !Ref S3Bucket
+                - '/*'
+
+  AppRegistryApplicationStackAssociation:
+    Type: AWS::ServiceCatalogAppRegistry::ResourceAssociation
+    Properties:
+      Application: arn:aws:servicecatalog:eu-north-1:897722698206:/applications/08i6plqg6mgngt3xsqar3uqzoj
+      Resource: !Ref AWS::StackId
+      ResourceType: CFN_STACK
+
+Outputs:
+  BucketName:
+    Description: Nom du bucket S3
+    Value: !Ref S3Bucket
+
+  BucketARN:
+    Description: ARN du bucket S3
+    Value: !GetAtt S3Bucket.Arn 

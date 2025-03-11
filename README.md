@@ -43,14 +43,44 @@ OPENAI_API_KEY=votre_clé_openai
 # AWS S3 Configuration (requis pour le stockage en production)
 AWS_ACCESS_KEY_ID=votre_aws_access_key_id
 AWS_SECRET_ACCESS_KEY=votre_aws_secret_access_key
-AWS_REGION=us-east-1
+AWS_REGION=eu-north-1
 AWS_S3_BUCKET_NAME=votre_bucket_name
+AWS_APPLICATION_ARN=arn:aws:resource-groups:eu-north-1:897722698206:group/VideoAds_Analyzer/08i6plqg6mgngt3xsqar3uqzoj
 
 # Configuration
 MAX_FILE_SIZE=104857600  # 100MB en octets
 ```
 
 ## Configuration d'AWS S3 (pour la production)
+
+### Méthode 1: Déploiement automatisé avec CloudFormation
+
+Nous fournissons un script de déploiement CloudFormation qui configure automatiquement toutes les ressources AWS nécessaires:
+
+1. **Installez l'AWS CLI** si ce n'est pas déjà fait:
+   - Suivez les instructions sur [la documentation AWS](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html)
+
+2. **Configurez vos identifiants AWS**:
+   ```bash
+   aws configure
+   ```
+   - Entrez votre AWS Access Key ID et Secret Access Key
+   - Définissez la région par défaut sur `eu-north-1`
+   - Format de sortie: `json`
+
+3. **Exécutez le script de déploiement**:
+   ```bash
+   cd aws
+   ./deploy.sh
+   ```
+
+Ce script va:
+- Créer un bucket S3 configuré pour l'application
+- Configurer les autorisations nécessaires
+- Associer l'application à l'ARN spécifié
+- Mettre à jour votre fichier `.env.local` avec le nom du bucket
+
+### Méthode 2: Configuration manuelle
 
 Pour utiliser le stockage AWS S3 en production, suivez ces étapes :
 
@@ -62,9 +92,10 @@ Pour utiliser le stockage AWS S3 en production, suivez ces étapes :
    - Dans la console AWS, recherchez "S3"
    - Cliquez sur "Créer un bucket"
    - Donnez un nom unique à votre bucket
-   - Choisissez une région (de préférence proche de vos utilisateurs)
+   - Choisissez la région `eu-north-1` (Stockholm)
    - Configurez les paramètres selon vos besoins
    - Assurez-vous que "Block all public access" est désactivé si vous voulez que les vidéos soient publiques
+   - Dans les tags, ajoutez la clé `awsApplication` avec la valeur `arn:aws:resource-groups:eu-north-1:897722698206:group/VideoAds_Analyzer/08i6plqg6mgngt3xsqar3uqzoj`
    - Créez le bucket
 
 3. **Créer un utilisateur IAM avec les permissions S3** :
@@ -79,7 +110,7 @@ Pour utiliser le stockage AWS S3 en production, suivez ces étapes :
    - Ajoutez les clés d'accès à votre fichier `.env.local` comme indiqué ci-dessus
    - Pour Vercel, ajoutez ces variables dans les paramètres du projet
 
-5. **Configurer CORS pour le bucket S3** (si nécessaire) :
+5. **Configurer CORS pour le bucket S3** :
    - Dans les propriétés du bucket, allez dans "Permissions" > "CORS"
    - Ajoutez une configuration comme celle-ci :
    ```json

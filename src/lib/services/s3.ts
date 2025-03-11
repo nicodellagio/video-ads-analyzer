@@ -2,9 +2,12 @@ import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } fro
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { ReadableStream } from 'stream/web';
 
+// Identifiant de l'application AWS
+const AWS_APP_ARN = process.env.AWS_APPLICATION_ARN || 'arn:aws:resource-groups:eu-north-1:897722698206:group/VideoAds_Analyzer/08i6plqg6mgngt3xsqar3uqzoj';
+
 // Configuration S3
 const s3Client = new S3Client({
-  region: process.env.AWS_REGION || 'us-east-1',
+  region: process.env.AWS_REGION || 'eu-north-1',
   credentials: {
     accessKeyId: process.env.AWS_ACCESS_KEY_ID || '',
     secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || ''
@@ -73,12 +76,13 @@ export async function uploadToS3(
       size = file.length;
     }
 
-    // Télécharger le fichier sur S3
+    // Télécharger le fichier sur S3 avec les tags appropriés
     const command = new PutObjectCommand({
       Bucket: bucketName,
       Key: key,
       Body: body,
-      ContentType: contentType
+      ContentType: contentType,
+      Tagging: `awsApplication=${encodeURIComponent(AWS_APP_ARN)}`
     });
 
     await s3Client.send(command);
