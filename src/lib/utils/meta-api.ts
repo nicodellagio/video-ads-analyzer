@@ -7,6 +7,9 @@ import { got } from 'got';
 import { join } from 'path';
 import { v4 as uuidv4 } from 'uuid';
 
+// Répertoire temporaire pour Vercel (ne pas utiliser /var/task qui est en lecture seule)
+const TEMP_DIR = process.env.VERCEL ? '/tmp' : join(process.cwd(), 'public', 'uploads');
+
 // Types for API responses
 interface MetaApiResponse {
   success: boolean;
@@ -38,18 +41,20 @@ async function extractVideoWithYoutubeDl(url: string): Promise<MetaVideoInfo> {
     const { exec } = await import('child_process');
     const { promisify } = await import('util');
     const fs = await import('fs');
-    const { readdir } = await import('fs/promises');
+    const fsPromises = await import('fs/promises');
+    const { readdir } = fsPromises;
     const execAsync = promisify(exec);
     
     // Generate a unique ID for the video
     const videoId = uuidv4();
-    const outputDir = join(process.cwd(), 'public', 'uploads');
+    const outputDir = TEMP_DIR;
     const outputBaseName = `${videoId}`;
     const outputPath = join(outputDir, `${outputBaseName}.mp4`);
     
     // Ensure the directory exists
     if (!fs.existsSync(outputDir)) {
-      fs.mkdirSync(outputDir, { recursive: true });
+      await fsPromises.mkdir(outputDir, { recursive: true });
+      console.log(`Created temporary directory: ${outputDir}`);
     }
     
     // Build the yt-dlp command with advanced options
@@ -242,10 +247,24 @@ export async function downloadVideo(videoUrl: string, outputPath: string): Promi
       return true;
     }
     
-    const stream = got.stream(videoUrl);
+    // Ensure the TEMP_DIR exists
     const fs = await import('fs');
+    const fsPromises = await import('fs/promises');
+    const { dirname } = await import('path');
+    
+    // Ensure the directory exists
+    const outputDir = dirname(outputPath);
+    if (!fs.existsSync(outputDir)) {
+      await fsPromises.mkdir(outputDir, { recursive: true });
+      console.log(`Created output directory: ${outputDir}`);
+    }
+    
+    console.log(`Downloading video from ${videoUrl} to ${outputPath}`);
+    
+    const stream = got.stream(videoUrl);
     const { createWriteStream } = fs;
     const writeStream = createWriteStream(outputPath);
+    
     return new Promise((resolve, reject) => {
       stream.pipe(writeStream);
       stream.on('error', (error) => {
@@ -266,6 +285,17 @@ export async function downloadVideo(videoUrl: string, outputPath: string): Promi
     try {
       const { writeFile } = await import('fs/promises');
       const dummyContent = Buffer.from('Video factice downloaded from ' + videoUrl);
+      
+      // Ensure the directory exists
+      const fs = await import('fs');
+      const { dirname } = await import('path');
+      const fsPromises = await import('fs/promises');
+      
+      const outputDir = dirname(outputPath);
+      if (!fs.existsSync(outputDir)) {
+        await fsPromises.mkdir(outputDir, { recursive: true });
+      }
+      
       await writeFile(outputPath, dummyContent);
       console.log(`Dummy file created at ${outputPath} due to download error`);
       return true;

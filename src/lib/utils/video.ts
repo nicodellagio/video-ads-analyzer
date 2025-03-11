@@ -1,11 +1,11 @@
 import { join } from 'path';
 import { writeFile, mkdir, unlink } from 'fs/promises';
 import { existsSync, statSync } from 'fs';
-import { USE_LOCAL_STORAGE, USE_S3_STORAGE } from './constants';
+import { USE_LOCAL_STORAGE, USE_S3_STORAGE, IS_VERCEL } from './constants';
 import { uploadToS3, deleteFromS3, getPresignedUrl } from '@/lib/services/s3';
 
-// Dossier de téléchargement
-export const UPLOAD_DIR = join(process.cwd(), 'public', 'uploads');
+// Dossier de téléchargement (utiliser /tmp sur Vercel)
+export const UPLOAD_DIR = IS_VERCEL ? '/tmp' : join(process.cwd(), 'public', 'uploads');
 
 // Préfixe pour les fichiers S3
 export const S3_PREFIX = 'videos/';
@@ -29,11 +29,15 @@ export interface VideoMetadata {
  * S'assure que le dossier de téléchargement existe
  */
 export async function ensureUploadDir(): Promise<void> {
-  // En production on utilise S3, pas besoin de créer de dossier
-  if (!USE_LOCAL_STORAGE) return;
-  
+  // Sur Vercel, on doit toujours créer le dossier /tmp s'il n'existe pas déjà
   if (!existsSync(UPLOAD_DIR)) {
-    await mkdir(UPLOAD_DIR, { recursive: true });
+    try {
+      await mkdir(UPLOAD_DIR, { recursive: true });
+      console.log(`Created upload directory: ${UPLOAD_DIR}`);
+    } catch (error) {
+      console.error(`Failed to create upload directory ${UPLOAD_DIR}:`, error);
+      throw new Error(`Failed to create upload directory: ${(error as Error).message}`);
+    }
   }
 }
 

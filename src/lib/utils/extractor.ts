@@ -11,6 +11,9 @@ import { S3_PREFIX } from './video';
 // Types de sources vidéo supportées
 export type VideoSource = 'instagram' | 'meta' | 'youtube' | 'tiktok';
 
+// Répertoire temporaire pour Vercel (ne pas utiliser /var/task qui est en lecture seule)
+const TEMP_DIR = process.env.VERCEL ? '/tmp' : join(process.cwd(), 'public', 'uploads');
+
 // Interface pour les options d'extraction
 interface ExtractionOptions {
   url: string;
@@ -187,9 +190,12 @@ export async function extractFacebookVideo(url: string): Promise<VideoMetadata> 
   try {
     // Importer les modules côté serveur uniquement
     const fs = await import('fs');
+    const fsPromises = await import('fs/promises');
     
-    // S'assurer que le dossier de téléchargement existe
-    await ensureUploadDir();
+    // S'assurer que le dossier temporaire existe
+    if (!fs.existsSync(TEMP_DIR)) {
+      await fsPromises.mkdir(TEMP_DIR, { recursive: true });
+    }
     
     console.log('Extraction of video Facebook from:', url);
     
@@ -204,7 +210,7 @@ export async function extractFacebookVideo(url: string): Promise<VideoMetadata> 
     
     // Utiliser l'ID généré par getFacebookVideoInfo
     const videoId = videoInfo.id;
-    const outputPath = join(process.cwd(), 'public', 'uploads', `${videoId}.mp4`);
+    const outputPath = join(TEMP_DIR, `${videoId}.mp4`);
     
     // Si nous sommes en production sur Vercel et que le fichier a été téléchargé, le sauvegarder sur S3
     let publicUrl;
@@ -259,9 +265,12 @@ export async function extractInstagramVideo(url: string): Promise<VideoMetadata>
   try {
     // Importer les modules côté serveur uniquement
     const fs = await import('fs');
+    const fsPromises = await import('fs/promises');
     
-    // S'assurer que le dossier de téléchargement existe
-    await ensureUploadDir();
+    // S'assurer que le dossier temporaire existe
+    if (!fs.existsSync(TEMP_DIR)) {
+      await fsPromises.mkdir(TEMP_DIR, { recursive: true });
+    }
     
     console.log('Extraction of video Instagram from:', url);
     
@@ -276,7 +285,7 @@ export async function extractInstagramVideo(url: string): Promise<VideoMetadata>
     
     // Utiliser l'ID généré par getInstagramVideoInfo
     const videoId = videoInfo.id;
-    const outputPath = join(process.cwd(), 'public', 'uploads', `${videoId}.mp4`);
+    const outputPath = join(TEMP_DIR, `${videoId}.mp4`);
     
     // Si nous sommes en production sur Vercel et que le fichier a été téléchargé, le sauvegarder sur S3
     let publicUrl;
@@ -327,20 +336,39 @@ export async function extractInstagramVideo(url: string): Promise<VideoMetadata>
 export async function saveExtractedFile(filePath: string, fileName: string, contentType = 'video/mp4'): Promise<{ url: string; s3Key?: string }> {
   // En production sur Vercel, on utilise S3
   if (!USE_LOCAL_STORAGE) {
-    // Importer fs dynamiquement (seulement disponible côté serveur)
-    const fs = await import('fs');
-    const buffer = fs.readFileSync(filePath);
-    
-    // Générer une clé S3
-    const s3Key = `${S3_PREFIX}${fileName}`;
-    
-    // Uploader sur S3
-    const { url, key } = await uploadToS3(buffer, s3Key, contentType);
-    
-    // Supprimer le fichier local temporaire
-    fs.unlinkSync(filePath);
-    
-    return { url, s3Key: key };
+    try {
+      // Importer fs dynamiquement (seulement disponible côté serveur)
+      const fs = await import('fs');
+      
+      // Vérifier si le fichier existe
+      if (!fs.existsSync(filePath)) {
+        console.warn(`Le fichier ${filePath} n'existe pas, impossible de l'uploader sur S3`);
+        return { url: `/api/placeholder/${fileName}` }; // URL de remplacement pour éviter les erreurs
+      }
+      
+      const buffer = fs.readFileSync(filePath);
+      
+      // Générer une clé S3
+      const s3Key = `${S3_PREFIX}${fileName}`;
+      
+      console.log(`Uploading file to S3: ${s3Key}`);
+      
+      // Uploader sur S3
+      const { url, key } = await uploadToS3(buffer, s3Key, contentType);
+      
+      // Supprimer le fichier local temporaire
+      try {
+        fs.unlinkSync(filePath);
+        console.log(`Temporary file deleted: ${filePath}`);
+      } catch (err) {
+        console.warn(`Failed to delete temporary file ${filePath}:`, err);
+      }
+      
+      return { url, s3Key: key };
+    } catch (error) {
+      console.error('Erreur lors de l\'upload sur S3:', error);
+      throw new Error(`Erreur lors de l'upload sur S3: ${(error as Error).message}`);
+    }
   }
   
   // En développement, retourner l'URL locale
