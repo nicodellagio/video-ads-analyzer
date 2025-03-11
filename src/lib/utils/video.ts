@@ -1,6 +1,7 @@
 import { join } from 'path';
 import { writeFile, mkdir, unlink } from 'fs/promises';
 import { existsSync, statSync } from 'fs';
+import { USE_LOCAL_STORAGE } from './constants';
 
 // Dossier de téléchargement
 export const UPLOAD_DIR = join(process.cwd(), 'public', 'uploads');
@@ -23,6 +24,9 @@ export interface VideoMetadata {
  * S'assure que le dossier de téléchargement existe
  */
 export async function ensureUploadDir(): Promise<void> {
+  // En production sur Vercel, on ne crée pas de dossiers
+  if (!USE_LOCAL_STORAGE) return;
+  
   if (!existsSync(UPLOAD_DIR)) {
     await mkdir(UPLOAD_DIR, { recursive: true });
   }
@@ -35,16 +39,25 @@ export async function ensureUploadDir(): Promise<void> {
  * @returns Chemin complet du fichier vidéo
  */
 export function getVideoPath(videoId: string, extension: string = 'mp4'): string {
+  // Sur Vercel, on simule le chemin (utilisé uniquement pour référence)
+  if (!USE_LOCAL_STORAGE) {
+    return `${videoId}.${extension}`;
+  }
   return join(UPLOAD_DIR, `${videoId}.${extension}`);
 }
 
 /**
- * Sauvegarde un fichier vidéo sur le disque
+ * Sauvegarde un fichier vidéo sur le disque ou dans le stockage externe
  * @param file Fichier vidéo
  * @param fileName Nom du fichier
- * @returns Chemin du fichier sauvegardé
+ * @returns Chemin ou URL du fichier sauvegardé
  */
 export async function saveVideoFile(file: File, fileName: string): Promise<string> {
+  // En production sur Vercel, on ne peut pas sauvegarder de fichiers
+  if (!USE_LOCAL_STORAGE) {
+    throw new Error('Direct file storage not supported in production. Use an external storage service.');
+  }
+  
   await ensureUploadDir();
   const filePath = join(UPLOAD_DIR, fileName);
   const fileBuffer = Buffer.from(await file.arrayBuffer());

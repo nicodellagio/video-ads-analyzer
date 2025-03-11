@@ -4,6 +4,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { ensureUploadDir, extractVideoMetadata } from './video';
 import { getFacebookVideoInfo, getInstagramVideoInfo, downloadVideo } from './meta-api';
 import type { VideoMetadata } from './video';
+import { USE_LOCAL_STORAGE } from './constants';
 
 // Types de sources vidéo supportées
 export type VideoSource = 'instagram' | 'meta' | 'youtube' | 'tiktok';
@@ -41,6 +42,11 @@ export async function extractVideoFromUrl(options: ExtractionOptions): Promise<V
   // Valider l'URL
   if (!validateUrl(url, source)) {
     throw new Error(`URL invalide for the source ${source}`);
+  }
+  
+  // En production sur Vercel, on ne peut pas utiliser le stockage local
+  if (!USE_LOCAL_STORAGE) {
+    throw new Error('Direct file extraction not supported in production. Use an external service.');
   }
   
   try {
@@ -176,6 +182,11 @@ export async function extractFacebookVideo(url: string): Promise<VideoMetadata> 
     throw new Error('Cette fonction ne peut être exécutée que côté serveur');
   }
   
+  // En production sur Vercel, on ne peut pas utiliser le stockage local
+  if (!USE_LOCAL_STORAGE) {
+    throw new Error('Direct file extraction not supported in production. Use an external service.');
+  }
+  
   try {
     // Importer les modules côté serveur uniquement
     const fs = await import('fs');
@@ -234,6 +245,11 @@ export async function extractInstagramVideo(url: string): Promise<VideoMetadata>
   // Cette fonction ne doit être exécutée que côté serveur
   if (typeof window !== 'undefined') {
     throw new Error('Cette fonction ne peut être exécutée que côté serveur');
+  }
+  
+  // En production sur Vercel, on ne peut pas utiliser le stockage local
+  if (!USE_LOCAL_STORAGE) {
+    throw new Error('Direct file extraction not supported in production. Use an external service.');
   }
   
   try {
