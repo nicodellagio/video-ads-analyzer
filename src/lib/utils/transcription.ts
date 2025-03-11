@@ -22,50 +22,14 @@ export interface TranscriptionResult {
 }
 
 /**
- * Extrait l'audio d'un fichier vidéo en utilisant FFmpeg
- * @param videoPath Chemin du fichier vidéo
- * @returns Chemin du fichier audio extrait
+ * Vérifie si l'extension du fichier est compatible avec l'API Whisper d'OpenAI
+ * @param filePath Chemin du fichier
+ * @returns true si l'extension est compatible, false sinon
  */
-async function extractAudioFromVideo(videoPath: string): Promise<string> {
-  try {
-    const path = await import('path');
-    const { exec } = await import('child_process');
-    const { promisify } = await import('util');
-    const execAsync = promisify(exec);
-    const fs = await import('fs');
-    
-    // Utiliser ffmpeg-static pour s'assurer qu'il est disponible
-    const ffmpegStatic = await import('ffmpeg-static');
-    const ffmpegPath = ffmpegStatic.default;
-    
-    console.log(`Using FFmpeg from: ${ffmpegPath}`);
-    
-    // Générer un chemin pour le fichier audio
-    const dir = path.dirname(videoPath);
-    const fileNameNoExt = path.basename(videoPath, path.extname(videoPath));
-    const outputPath = path.join(dir, `${fileNameNoExt}_audio.mp3`);
-    
-    console.log(`Extracting audio from ${videoPath} to ${outputPath}`);
-    
-    // Commande pour extraire l'audio en format MP3
-    const command = `"${ffmpegPath}" -i "${videoPath}" -vn -ar 44100 -ac 2 -b:a 192k "${outputPath}" -y`;
-    console.log(`Executing: ${command}`);
-    
-    const { stdout, stderr } = await execAsync(command);
-    if (stdout) console.log('FFmpeg output:', stdout);
-    if (stderr && !stderr.includes('time=')) console.error('FFmpeg stderr:', stderr);
-    
-    // Vérifier si le fichier a été créé
-    if (fs.existsSync(outputPath) && fs.statSync(outputPath).size > 0) {
-      console.log(`Successfully extracted audio to ${outputPath}`);
-      return outputPath;
-    } else {
-      throw new Error(`Failed to extract audio, output file not found or empty: ${outputPath}`);
-    }
-  } catch (error) {
-    console.error('Error extracting audio:', error);
-    throw new Error(`Failed to extract audio: ${(error as Error).message}`);
-  }
+function hasCompatibleExtension(filePath: string): boolean {
+  const compatibleExtensions = ['.mp3', '.mp4', '.mpeg', '.mpga', '.m4a', '.wav', '.webm'];
+  const extension = filePath.substring(filePath.lastIndexOf('.')).toLowerCase();
+  return compatibleExtensions.includes(extension);
 }
 
 /**
@@ -91,25 +55,18 @@ export async function transcribeVideo(
   if (!existsSync(videoPath)) {
     throw new Error(`Le fichier vidéo n'existe pas: ${videoPath}`);
   }
-  
-  let audioPath = '';
-  let cleanup = false;
 
   try {
-    // Extraire l'audio du fichier vidéo (pour assurer la compatibilité avec Whisper)
-    audioPath = await extractAudioFromVideo(videoPath);
-    cleanup = true;
-    
     // Initialiser le client OpenAI avec la clé API
     const openai = new OpenAI({
       apiKey: process.env.OPENAI_API_KEY,
     });
 
-    console.log(`Transcription du fichier audio: ${audioPath}`);
+    console.log(`Transcription du fichier: ${videoPath}`);
 
     // Préparer les options de transcription
     const transcriptionOptions: any = {
-      file: await createReadStreamFromPath(audioPath),
+      file: await createReadStreamFromPath(videoPath),
       model: 'whisper-1',
       response_format: options.responseFormat || 'verbose_json',
     };
@@ -156,16 +113,6 @@ export async function transcribeVideo(
   } catch (error) {
     console.error('Error during transcription:', error);
     throw new Error(`Error during transcription: ${(error as Error).message}`);
-  } finally {
-    // Nettoyer le fichier audio temporaire
-    if (cleanup && audioPath) {
-      try {
-        await fsPromises.unlink(audioPath);
-        console.log(`Deleted temporary audio file: ${audioPath}`);
-      } catch (cleanupError) {
-        console.warn(`Failed to delete temporary audio file: ${cleanupError}`);
-      }
-    }
   }
 }
 

@@ -24,28 +24,23 @@ function normalizeFileName(fileName: string): string {
   let extension = path.extname(fileName).toLowerCase();
   const baseName = path.basename(fileName, extension);
   
-  // Si l'extension est en majuscules ou contient des caractères non standards, la normaliser
-  // Whisper accepte: 'flac', 'm4a', 'mp3', 'mp4', 'mpeg', 'mpga', 'oga', 'ogg', 'wav', 'webm'
+  // Liste des extensions acceptées par OpenAI Whisper
   const whisperCompatibleExtensions = ['.flac', '.m4a', '.mp3', '.mp4', '.mpeg', '.mpga', '.oga', '.ogg', '.wav', '.webm'];
   
-  // Normaliser des extensions communes vers leurs équivalents compatibles
-  const extensionMap: Record<string, string> = {
-    '.mpg': '.mpeg',
-    '.mov': '.mp4',
-    '.avi': '.mp4',
-    '.mkv': '.mp4',
-    '.3gp': '.mp4',
-    '.m4v': '.mp4',
-    '.wmv': '.mp4'
-  };
-  
-  // Si l'extension est mappée, utiliser l'extension compatible
-  if (extensionMap[extension]) {
-    extension = extensionMap[extension];
-  } 
-  // Sinon, si l'extension n'est pas dans la liste compatible, utiliser .mp4 par défaut
-  else if (!whisperCompatibleExtensions.includes(extension)) {
-    extension = '.mp4';
+  // Si l'extension n'est pas compatible, utiliser .mp4 par défaut
+  if (!whisperCompatibleExtensions.includes(extension)) {
+    // Pour les formats vidéo courants, utiliser .mp4
+    if (['.mov', '.avi', '.mkv', '.wmv', '.3gp', '.m4v'].includes(extension)) {
+      extension = '.mp4';
+    } 
+    // Pour les formats audio courants, utiliser .mp3
+    else if (['.aac', '.aiff', '.wma', '.m4b'].includes(extension)) {
+      extension = '.mp3';
+    }
+    // Pour tout autre format, par défaut .mp4
+    else {
+      extension = '.mp4';
+    }
   }
   
   return `${baseName}${extension}`;
