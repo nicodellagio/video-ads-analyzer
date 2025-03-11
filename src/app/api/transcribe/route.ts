@@ -109,30 +109,52 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Transcribe video with OpenAI Whisper
-    // La transcription gère maintenant l'extraction audio automatiquement
-    console.log(`Transcription of the video: ${videoId} (file: ${localFilePath})`);
-    const transcription = await transcribeVideo(localFilePath, {
-      responseFormat: 'verbose_json',
-    });
-
-    console.log(`Transcription completed for the video: ${videoId}`);
-    
-    // Cleanup temporary file if needed
-    if (needsCleanup && localFilePath) {
-      try {
-        const fs = await import('fs');
-        if (fs.existsSync(localFilePath)) {
-          fs.unlinkSync(localFilePath);
-          console.log(`Temporary file deleted: ${localFilePath}`);
+    // Tenter la transcription
+    try {
+      console.log(`Transcription of the video: ${videoId} (file: ${localFilePath})`);
+      const transcription = await transcribeVideo(localFilePath, {
+        responseFormat: 'verbose_json',
+      });
+      
+      console.log(`Transcription completed for the video: ${videoId}`);
+      
+      // Return transcription results
+      return NextResponse.json(transcription);
+    } catch (transcriptionError) {
+      console.error('Transcription error:', transcriptionError);
+      
+      // Vérifier s'il s'agit d'une erreur de format
+      const errorMessage = (transcriptionError as Error).message || '';
+      
+      if (errorMessage.includes('Invalid file format') || errorMessage.includes('Supported formats')) {
+        // Message personnalisé pour l'erreur de format
+        return NextResponse.json(
+          { 
+            error: "Le format de la vidéo n'est pas pris en charge pour la transcription.",
+            details: "OpenAI Whisper ne peut pas traiter ce format vidéo. Veuillez essayer de convertir votre vidéo en MP4 ou MP3 avant de l'uploader, ou utiliser un autre fichier.",
+            supported_formats: ['flac', 'm4a', 'mp3', 'mp4', 'mpeg', 'mpga', 'oga', 'ogg', 'wav', 'webm'],
+            original_error: errorMessage
+          },
+          { status: 400 }
+        );
+      }
+      
+      // Pour toute autre erreur, utiliser le message standard
+      throw transcriptionError;
+    } finally {
+      // Cleanup temporary file if needed
+      if (needsCleanup && localFilePath) {
+        try {
+          const fs = await import('fs');
+          if (fs.existsSync(localFilePath)) {
+            fs.unlinkSync(localFilePath);
+            console.log(`Temporary file deleted: ${localFilePath}`);
+          }
+        } catch (err) {
+          console.warn(`Failed to delete temporary file: ${err}`);
         }
-      } catch (err) {
-        console.warn(`Failed to delete temporary file: ${err}`);
       }
     }
-
-    // Return transcription results
-    return NextResponse.json(transcription);
   } catch (error) {
     console.error('Error during transcription:', error);
     return NextResponse.json(
