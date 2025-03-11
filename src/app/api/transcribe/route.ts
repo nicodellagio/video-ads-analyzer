@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { existsSync } from 'fs';
 import { transcribeVideo } from '@/lib/utils/transcription';
 import { getVideoPath } from '@/lib/utils/video';
+import { USE_S3_STORAGE } from '@/lib/utils/constants';
 
 /**
  * Handles POST requests for video transcription
@@ -9,7 +10,7 @@ import { getVideoPath } from '@/lib/utils/video';
 export async function POST(request: NextRequest) {
   try {
     // Get video URL from request body
-    const { videoUrl } = await request.json();
+    const { videoUrl, source } = await request.json();
 
     if (!videoUrl) {
       return NextResponse.json(
@@ -33,8 +34,29 @@ export async function POST(request: NextRequest) {
     // Get video file path
     const videoPath = getVideoPath(videoId);
     
-    // Check if video file exists
-    if (!existsSync(videoPath)) {
+    // Check if video file exists, considering S3 for Vercel deployment
+    let fileExists = false;
+    
+    if (USE_S3_STORAGE) {
+      // En déploiement Vercel, nous supposons que l'URL est valide
+      // car la vérification d'existence se fait différemment pour S3
+      fileExists = true;
+      
+      // Si l'URL ne commence pas par /uploads/ ou https://, c'est probablement une URL invalide
+      if (!videoUrl.startsWith('/uploads/') && !videoUrl.startsWith('https://')) {
+        console.error(`Invalid video URL format: ${videoUrl}`);
+        return NextResponse.json(
+          { error: 'Invalid video URL format' },
+          { status: 400 }
+        );
+      }
+    } else {
+      // Pour le stockage local, vérifier si le fichier existe
+      fileExists = existsSync(videoPath);
+    }
+    
+    if (!fileExists) {
+      console.error(`Video file not found: ${videoPath}`);
       return NextResponse.json(
         { error: 'Video file not found' },
         { status: 404 }
