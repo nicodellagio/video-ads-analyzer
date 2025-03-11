@@ -55,17 +55,37 @@ async function createReadStreamFromPath(path: string): Promise<File | Buffer> {
         throw new Error(`Erreur lors du téléchargement du fichier: ${response.status} ${response.statusText}`);
       }
       
+      // Récupérer le type de contenu de la réponse
+      const contentType = response.headers.get('content-type');
+      console.log(`Type de contenu détecté: ${contentType}`);
+      
       // Convertir la réponse en Blob
       const blob = await response.blob();
+      console.log(`Fichier téléchargé: taille=${blob.size} octets, type=${blob.type}`);
       
-      // IMPORTANT: Forcer le type MIME à audio/mp4 ou audio/mpeg pour que l'API OpenAI l'accepte
-      // L'API OpenAI accepte uniquement les formats audio spécifiques
-      const fileName = path.split('/').pop() || 'audio.mp4';
+      // Extraire le nom du fichier
+      const fileName = path.split('/').pop()?.split('?')[0] || 'audio.mp4';
       
+      // IMPORTANT: Forcer le type MIME à audio/mp4 pour garantir la compatibilité avec OpenAI
       // Les formats acceptés par OpenAI: 'flac', 'm4a', 'mp3', 'mp4', 'mpeg', 'mpga', 'oga', 'ogg', 'wav', 'webm'
-      const file = new File([blob], fileName, { type: 'audio/mp4' });
+      let mimeType = 'audio/mp4';
       
-      console.log(`Fichier créé avec le type MIME: audio/mp4, nom: ${fileName}, taille: ${blob.size} octets`);
+      if (fileName.toLowerCase().endsWith('.mp3')) {
+        mimeType = 'audio/mpeg';
+      } else if (fileName.toLowerCase().endsWith('.wav')) {
+        mimeType = 'audio/wav'; 
+      } else if (fileName.toLowerCase().endsWith('.ogg')) {
+        mimeType = 'audio/ogg';
+      } else if (fileName.toLowerCase().endsWith('.flac')) {
+        mimeType = 'audio/flac';
+      } else if (fileName.toLowerCase().endsWith('.m4a')) {
+        mimeType = 'audio/m4a';
+      } else if (fileName.toLowerCase().endsWith('.webm')) {
+        mimeType = 'audio/webm';
+      }
+      
+      console.log(`Création du fichier avec le type MIME forcé: ${mimeType}, nom: ${fileName}`);
+      const file = new File([blob], fileName, { type: mimeType });
       
       return file;
     } catch (error) {

@@ -351,10 +351,20 @@ export async function saveExtractedFile(filePath: string, fileName: string, cont
       // Générer une clé S3
       const s3Key = `${S3_PREFIX}${fileName}`;
       
-      console.log(`Uploading file to S3: ${s3Key}`);
+      // Forcer le type MIME à audio/mp4 pour les fichiers MP4 (pour la compatibilité avec OpenAI)
+      let mimeType = contentType;
+      if (fileName.toLowerCase().endsWith('.mp4')) {
+        console.log(`Forçage du type MIME à audio/mp4 pour le fichier ${fileName}`);
+        mimeType = 'audio/mp4';
+      } else if (fileName.toLowerCase().endsWith('.mp3')) {
+        console.log(`Forçage du type MIME à audio/mpeg pour le fichier ${fileName}`);
+        mimeType = 'audio/mpeg';
+      }
+      
+      console.log(`Uploading file to S3: ${s3Key} with MIME type: ${mimeType}`);
       
       // Uploader sur S3
-      const { url, key } = await uploadToS3(buffer, s3Key, contentType);
+      const { url, key } = await uploadToS3(buffer, s3Key, mimeType);
       
       // Supprimer le fichier local temporaire
       try {

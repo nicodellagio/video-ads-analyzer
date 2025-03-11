@@ -66,7 +66,18 @@ export async function saveVideoFile(file: File, fileName: string): Promise<{ fil
   if (USE_S3_STORAGE) {
     try {
       const s3Key = `${S3_PREFIX}${fileName}`;
-      const { url, key } = await uploadToS3(file, s3Key, file.type);
+      
+      // Forcer le type MIME à audio/mp4 pour les fichiers MP4 (pour la compatibilité avec OpenAI)
+      let contentType = file.type;
+      if (fileName.toLowerCase().endsWith('.mp4')) {
+        console.log(`Forçage du type MIME à audio/mp4 pour le fichier ${fileName}`);
+        contentType = 'audio/mp4';
+      } else if (fileName.toLowerCase().endsWith('.mp3')) {
+        console.log(`Forçage du type MIME à audio/mpeg pour le fichier ${fileName}`);
+        contentType = 'audio/mpeg';
+      }
+      
+      const { url, key } = await uploadToS3(file, s3Key, contentType);
       
       return {
         filePath: fileName, // Juste pour compatibilité

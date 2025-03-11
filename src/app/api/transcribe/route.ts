@@ -75,12 +75,20 @@ export async function POST(request: NextRequest) {
     
     try {
       // Dans l'environnement S3, utiliser directement l'URL si disponible
-      const pathForTranscription = USE_S3_STORAGE && videoUrl.startsWith('https://') 
-        ? videoUrl 
-        : videoPath;
+      let pathForTranscription = videoPath;
       
-      console.log(`Using path for transcription: ${pathForTranscription}`);
+      if (USE_S3_STORAGE && videoUrl.startsWith('https://')) {
+        // Assurer que l'URL S3 est complète
+        pathForTranscription = videoUrl;
+        
+        // Si l'URL contient des paramètres de requête (comme les signatures AWS), les garder
+        console.log(`Using S3 URL for transcription: ${pathForTranscription}`);
+      } else {
+        console.log(`Using local path for transcription: ${pathForTranscription}`);
+      }
       
+      // Lancer la transcription avec traçage des erreurs
+      console.log(`Calling OpenAI API for video: ${videoId}`);
       const transcription = await transcribeVideo(pathForTranscription, {
         responseFormat: 'verbose_json',
       });
@@ -95,6 +103,8 @@ export async function POST(request: NextRequest) {
       
       // Vérifier si l'erreur est liée au format de fichier
       const errorMsg = (transcriptionError as Error).message || '';
+      console.error(`Transcription error details: ${errorMsg}`);
+      
       if (errorMsg.includes('Invalid file format') || errorMsg.includes('format')) {
         return NextResponse.json(
           { 
