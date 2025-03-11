@@ -5,6 +5,8 @@ import { ensureUploadDir, extractVideoMetadata } from './video';
 import { getFacebookVideoInfo, getInstagramVideoInfo, downloadVideo } from './meta-api';
 import type { VideoMetadata } from './video';
 import { USE_LOCAL_STORAGE } from './constants';
+import { uploadToS3 } from '@/lib/services/s3';
+import { S3_PREFIX } from './video';
 
 // Types de sources vidéo supportées
 export type VideoSource = 'instagram' | 'meta' | 'youtube' | 'tiktok';
@@ -182,11 +184,6 @@ export async function extractFacebookVideo(url: string): Promise<VideoMetadata> 
     throw new Error('Cette fonction ne peut être exécutée que côté serveur');
   }
   
-  // En production sur Vercel, on ne peut pas utiliser le stockage local
-  if (!USE_LOCAL_STORAGE) {
-    throw new Error('Direct file extraction not supported in production. Use an external service.');
-  }
-  
   try {
     // Importer les modules côté serveur uniquement
     const fs = await import('fs');
@@ -209,24 +206,36 @@ export async function extractFacebookVideo(url: string): Promise<VideoMetadata> 
     const videoId = videoInfo.id;
     const outputPath = join(process.cwd(), 'public', 'uploads', `${videoId}.mp4`);
     
-    // L'URL de la vidéo est déjà locale (commence par /uploads/)
-    // Pas besoin de télécharger à nouveau
-    const publicUrl = videoInfo.url;
+    // Si nous sommes en production sur Vercel et que le fichier a été téléchargé, le sauvegarder sur S3
+    let publicUrl;
+    let s3Key;
     
-    // Vérifier si le fichier existe
-    if (!fs.existsSync(outputPath)) {
+    if (!USE_LOCAL_STORAGE && fs.existsSync(outputPath)) {
+      // Sauvegarder le fichier sur S3
+      const result = await saveExtractedFile(outputPath, `${videoId}.mp4`);
+      publicUrl = result.url;
+      s3Key = result.s3Key;
+    } else {
+      // L'URL de la vidéo est déjà locale (commence par /uploads/)
+      publicUrl = videoInfo.url;
+    }
+    
+    // Vérifier si le fichier existe (seulement en mode local)
+    if (USE_LOCAL_STORAGE && !fs.existsSync(outputPath)) {
       throw new Error(`Le fichier vidéo n'existe pas à l'emplacement attendu: ${outputPath}`);
     }
     
     // Extraire les métadonnées de la vidéo téléchargée
+    // En mode S3, outputPath n'existe peut-être plus, mais la fonction gère ce cas
     const videoMetadata = await extractVideoMetadata(outputPath, {
-      size: fs.statSync(outputPath).size,
+      size: USE_LOCAL_STORAGE ? fs.statSync(outputPath).size : videoInfo.size || 0,
       name: videoInfo.title || `facebook_video_${videoId}`,
       id: videoId,
       url: publicUrl,
       duration: videoInfo.duration,
       width: videoInfo.width,
-      height: videoInfo.height
+      height: videoInfo.height,
+      s3Key
     });
     
     return videoMetadata;
@@ -245,11 +254,6 @@ export async function extractInstagramVideo(url: string): Promise<VideoMetadata>
   // Cette fonction ne doit être exécutée que côté serveur
   if (typeof window !== 'undefined') {
     throw new Error('Cette fonction ne peut être exécutée que côté serveur');
-  }
-  
-  // En production sur Vercel, on ne peut pas utiliser le stockage local
-  if (!USE_LOCAL_STORAGE) {
-    throw new Error('Direct file extraction not supported in production. Use an external service.');
   }
   
   try {
@@ -274,24 +278,36 @@ export async function extractInstagramVideo(url: string): Promise<VideoMetadata>
     const videoId = videoInfo.id;
     const outputPath = join(process.cwd(), 'public', 'uploads', `${videoId}.mp4`);
     
-    // L'URL de la vidéo est déjà locale (commence par /uploads/)
-    // Pas besoin de télécharger à nouveau
-    const publicUrl = videoInfo.url;
+    // Si nous sommes en production sur Vercel et que le fichier a été téléchargé, le sauvegarder sur S3
+    let publicUrl;
+    let s3Key;
     
-    // Vérifier si le fichier existe
-    if (!fs.existsSync(outputPath)) {
+    if (!USE_LOCAL_STORAGE && fs.existsSync(outputPath)) {
+      // Sauvegarder le fichier sur S3
+      const result = await saveExtractedFile(outputPath, `${videoId}.mp4`);
+      publicUrl = result.url;
+      s3Key = result.s3Key;
+    } else {
+      // L'URL de la vidéo est déjà locale (commence par /uploads/)
+      publicUrl = videoInfo.url;
+    }
+    
+    // Vérifier si le fichier existe (seulement en mode local)
+    if (USE_LOCAL_STORAGE && !fs.existsSync(outputPath)) {
       throw new Error(`Le fichier vidéo n'existe pas à l'emplacement attendu: ${outputPath}`);
     }
     
     // Extraire les métadonnées de la vidéo téléchargée
+    // En mode S3, outputPath n'existe peut-être plus, mais la fonction gère ce cas
     const videoMetadata = await extractVideoMetadata(outputPath, {
-      size: fs.statSync(outputPath).size,
+      size: USE_LOCAL_STORAGE ? fs.statSync(outputPath).size : videoInfo.size || 0,
       name: videoInfo.title || `instagram_video_${videoId}`,
       id: videoId,
       url: publicUrl,
       duration: videoInfo.duration,
       width: videoInfo.width,
-      height: videoInfo.height
+      height: videoInfo.height,
+      s3Key
     });
     
     return videoMetadata;
@@ -299,4 +315,34 @@ export async function extractInstagramVideo(url: string): Promise<VideoMetadata>
     console.error('Erreur lors de l\'extraction de la vidéo Instagram:', error);
     throw new Error(`Erreur lors de l'extraction de la vidéo Instagram: ${(error as Error).message}`);
   }
+}
+
+/**
+ * Sauvegarde un fichier sur S3 ou sur le disque local selon l'environnement
+ * @param filePath Chemin local du fichier
+ * @param fileName Nom du fichier
+ * @param contentType Type de contenu (MIME)
+ * @returns Informations sur le fichier sauvegardé
+ */
+export async function saveExtractedFile(filePath: string, fileName: string, contentType = 'video/mp4'): Promise<{ url: string; s3Key?: string }> {
+  // En production sur Vercel, on utilise S3
+  if (!USE_LOCAL_STORAGE) {
+    // Importer fs dynamiquement (seulement disponible côté serveur)
+    const fs = await import('fs');
+    const buffer = fs.readFileSync(filePath);
+    
+    // Générer une clé S3
+    const s3Key = `${S3_PREFIX}${fileName}`;
+    
+    // Uploader sur S3
+    const { url, key } = await uploadToS3(buffer, s3Key, contentType);
+    
+    // Supprimer le fichier local temporaire
+    fs.unlinkSync(filePath);
+    
+    return { url, s3Key: key };
+  }
+  
+  // En développement, retourner l'URL locale
+  return { url: `/uploads/${fileName}` };
 } 

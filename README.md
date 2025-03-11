@@ -15,6 +15,7 @@ Une application web moderne pour analyser les vidéos publicitaires à partir de
   - Déclencheurs émotionnels
 - **Exportation des rapports** en PDF ou Google Docs
 - **Interface utilisateur intuitive** avec visualisation des résultats
+- **Stockage des vidéos** sur AWS S3 en production
 
 ## Installation
 
@@ -27,7 +28,7 @@ cd video-ads-v1
 npm install
 
 # Configurer les variables d'environnement
-cp .env.example .env.local
+cp .env.local.example .env.local
 # Éditer .env.local avec vos clés API
 ```
 
@@ -38,13 +39,59 @@ Créez un fichier `.env.local` à la racine du projet avec les variables suivant
 ```
 # API Keys
 OPENAI_API_KEY=votre_clé_openai
-CLOUDINARY_CLOUD_NAME=votre_cloud_name
-CLOUDINARY_API_KEY=votre_api_key
-CLOUDINARY_API_SECRET=votre_api_secret
+
+# AWS S3 Configuration (requis pour le stockage en production)
+AWS_ACCESS_KEY_ID=votre_aws_access_key_id
+AWS_SECRET_ACCESS_KEY=votre_aws_secret_access_key
+AWS_REGION=us-east-1
+AWS_S3_BUCKET_NAME=votre_bucket_name
 
 # Configuration
 MAX_FILE_SIZE=104857600  # 100MB en octets
 ```
+
+## Configuration d'AWS S3 (pour la production)
+
+Pour utiliser le stockage AWS S3 en production, suivez ces étapes :
+
+1. **Créer un compte AWS** (si vous n'en avez pas déjà un)
+   - Rendez-vous sur [AWS Console](https://console.aws.amazon.com/)
+   - Créez un compte ou connectez-vous
+
+2. **Créer un bucket S3** :
+   - Dans la console AWS, recherchez "S3"
+   - Cliquez sur "Créer un bucket"
+   - Donnez un nom unique à votre bucket
+   - Choisissez une région (de préférence proche de vos utilisateurs)
+   - Configurez les paramètres selon vos besoins
+   - Assurez-vous que "Block all public access" est désactivé si vous voulez que les vidéos soient publiques
+   - Créez le bucket
+
+3. **Créer un utilisateur IAM avec les permissions S3** :
+   - Dans la console AWS, recherchez "IAM"
+   - Allez dans "Utilisateurs" et cliquez sur "Ajouter un utilisateur"
+   - Donnez un nom (ex: video-ads-s3-user)
+   - Sélectionnez "Accès programmatique"
+   - Attachez une politique qui autorise l'accès S3 (AmazonS3FullAccess)
+   - Terminez la création et notez l'Access Key ID et le Secret Access Key
+
+4. **Configurer les variables d'environnement** :
+   - Ajoutez les clés d'accès à votre fichier `.env.local` comme indiqué ci-dessus
+   - Pour Vercel, ajoutez ces variables dans les paramètres du projet
+
+5. **Configurer CORS pour le bucket S3** (si nécessaire) :
+   - Dans les propriétés du bucket, allez dans "Permissions" > "CORS"
+   - Ajoutez une configuration comme celle-ci :
+   ```json
+   [
+     {
+       "AllowedHeaders": ["*"],
+       "AllowedMethods": ["GET", "PUT", "POST", "DELETE"],
+       "AllowedOrigins": ["https://votre-domaine.com"],
+       "ExposeHeaders": ["ETag"]
+     }
+   ]
+   ```
 
 ## Configuration des API Meta (Facebook et Instagram)
 
@@ -92,6 +139,15 @@ npm run dev
 # Ouvrir http://localhost:3000
 ```
 
+## Déploiement sur Vercel
+
+1. **Créer un compte Vercel** (si vous n'en avez pas)
+2. **Lier votre dépôt GitHub**
+3. **Configurer les variables d'environnement** :
+   - Copiez toutes les variables de `.env.local` dans les paramètres du projet sur Vercel
+   - Assurez-vous de configurer AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION et AWS_S3_BUCKET_NAME
+4. **Déployer le projet**
+
 ## Structure du projet
 
 ```
@@ -111,20 +167,19 @@ npm run dev
   │   │   └── ui/               # Composants d'interface
   │   └── lib/                  # Utilitaires et services
   │       ├── context/          # Contextes React
-  │       ├── services/         # Services API
-  │       └── utils.ts          # Fonctions utilitaires
+  │       ├── services/         # Services API (S3, etc.)
+  │       └── utils/            # Fonctions utilitaires
   └── public/                   # Fichiers statiques
 ```
 
 ## Prochaines étapes
 
-- [ ] Intégration avec youtube-dl pour l'extraction de vidéos
-- [ ] Intégration avec OpenAI Whisper pour la transcription
-- [ ] Intégration avec GPT-4/Claude pour l'analyse
-- [ ] Configuration du stockage cloud avec Cloudinary/S3
+- [x] Intégration avec youtube-dl pour l'extraction de vidéos
+- [x] Intégration avec OpenAI pour l'analyse
+- [x] Configuration du stockage cloud avec AWS S3
 - [ ] Mise en place d'une base de données pour stocker les analyses
 - [ ] Système d'authentification utilisateur
-- [ ] Déploiement sur Vercel
+- [x] Déploiement sur Vercel
 
 ## Licence
 

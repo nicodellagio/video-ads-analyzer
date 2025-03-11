@@ -6,7 +6,7 @@ import {
   extractVideoMetadata, 
   ensureUploadDir 
 } from '@/lib/utils/video';
-import { USE_LOCAL_STORAGE } from '@/lib/utils/constants';
+import { USE_LOCAL_STORAGE, USE_S3_STORAGE } from '@/lib/utils/constants';
 
 // Taille maximale de fichier (100MB or from environment variables)
 const MAX_FILE_SIZE = process.env.MAX_FILE_SIZE 
@@ -46,40 +46,26 @@ export async function POST(request: NextRequest) {
     const fileExtension = file.name.split('.').pop() || 'mp4';
     const fileName = `${fileId}.${fileExtension}`;
     
-    // En production sur Vercel, on ne peut pas utiliser le stockage local
-    if (!USE_LOCAL_STORAGE) {
-      // Envoyer une réponse temporaire avec des métadonnées simulées
-      // TODO: Implémenter l'intégration avec un service de stockage externe (S3, Cloudinary, etc.)
+    // Vérifier si les identifiants AWS sont configurés en production
+    if (USE_S3_STORAGE && (!process.env.AWS_ACCESS_KEY_ID || !process.env.AWS_SECRET_ACCESS_KEY || !process.env.AWS_S3_BUCKET_NAME)) {
       return NextResponse.json({
-        success: true,
-        videoMetadata: {
-          duration: '00:00:30',
-          format: '1280x720',
-          size: `${(file.size / (1024 * 1024)).toFixed(1)} MB`,
-          url: `/api/media/${fileId}`, // URL fictive, à remplacer par l'URL réelle du service de stockage
-          originalName: file.name,
-          id: fileId,
-          width: 1280,
-          height: 720,
-          codec: 'h264',
-          bitrate: 0
-        },
-        message: "NOTE: Cette application fonctionne actuellement en mode démo. Pour activer l'upload de fichiers en production, veuillez configurer un service de stockage externe."
-      });
+        error: 'AWS S3 is not configured. Please set AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, and AWS_S3_BUCKET_NAME environment variables.'
+      }, { status: 500 });
     }
     
-    // Save file (uniquement en développement local)
-    const filePath = await saveVideoFile(file, fileName);
+    // Save file (via S3 en production, disque local en dev)
+    const { filePath, s3Key, url } = await saveVideoFile(file, fileName);
     
-    // Public file URL
-    const fileUrl = `/uploads/${fileName}`;
+    // URL publique (S3 ou locale)
+    const fileUrl = url || `/uploads/${fileName}`;
     
     // Extract video metadata
     const videoMetadata = await extractVideoMetadata(filePath, {
       size: file.size,
       name: file.name,
       id: fileId,
-      url: fileUrl
+      url: fileUrl,
+      s3Key
     });
 
     return NextResponse.json({ 
@@ -90,7 +76,7 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error('Upload error:', error);
     return NextResponse.json(
-      { error: 'Error during video upload' },
+      { error: `Error during video upload: ${(error as Error).message}` },
       { status: 500 }
     );
   }
