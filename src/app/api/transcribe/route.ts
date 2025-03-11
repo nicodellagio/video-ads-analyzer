@@ -70,12 +70,39 @@ export async function POST(request: NextRequest) {
     
     // Si nous utilisons S3 et que l'URL est une URL S3, téléchargeons le fichier temporairement
     if (USE_S3_STORAGE && videoUrl.includes('s3.') && !existsSync(videoPath)) {
+      // Utiliser toujours l'extension .mp4 en minuscules pour Whisper
       localFilePath = join(UPLOAD_DIR, `${videoId}_temp.mp4`);
       console.log(`Downloading S3 file to: ${localFilePath}`);
       
       try {
         await downloadFile(videoUrl, localFilePath);
         needsCleanup = true;
+        
+        // Vérifier que le fichier a été téléchargé et n'est pas vide
+        const fs = await import('fs');
+        const stats = fs.statSync(localFilePath);
+        
+        if (stats.size === 0) {
+          return NextResponse.json(
+            { error: 'Downloaded file is empty (0 bytes)' },
+            { status: 400 }
+          );
+        }
+        
+        // Vérifier le type MIME du fichier téléchargé
+        const fileBuffer = fs.readFileSync(localFilePath);
+        const fileType = await getFileType(fileBuffer);
+        
+        console.log(`File type detected: ${fileType?.mime || 'unknown'}`);
+        
+        // Si ce n'est pas un format vidéo/audio reconnu, retourner une erreur
+        if (fileType && !isValidMediaType(fileType.mime)) {
+          return NextResponse.json(
+            { error: `Invalid file type: ${fileType.mime}. Expected video or audio format.` },
+            { status: 400 }
+          );
+        }
+        
       } catch (error) {
         console.error(`Failed to download file from S3: ${error}`);
         return NextResponse.json(
@@ -94,7 +121,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Transcribe video with OpenAI Whisper
-    console.log(`Transcription of the video: ${videoId}`);
+    console.log(`Transcription of the video: ${videoId} (file: ${localFilePath})`);
     const transcription = await transcribeVideo(localFilePath, {
       responseFormat: 'verbose_json',
     });
@@ -121,4 +148,32 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     );
   }
+}
+
+/**
+ * Vérifie le type MIME d'un fichier en lisant son en-tête
+ */
+async function getFileType(buffer: Buffer): Promise<{ mime: string; ext: string } | null> {
+  try {
+    // Import dynamique de file-type
+    const fileType = await import('file-type');
+    // Analyse le type de fichier à partir du buffer
+    return await fileType.fileTypeFromBuffer(buffer) || null;
+  } catch (error) {
+    console.error('Error detecting file type:', error);
+    return null;
+  }
+}
+
+/**
+ * Vérifie si le type MIME est un format média valide pour la transcription
+ */
+function isValidMediaType(mimeType: string): boolean {
+  const validMimeTypes = [
+    'video/mp4', 'video/mpeg', 'video/ogg', 'video/webm',
+    'audio/mpeg', 'audio/mp4', 'audio/mp3', 'audio/ogg', 
+    'audio/wav', 'audio/webm', 'audio/flac', 'audio/m4a'
+  ];
+  
+  return validMimeTypes.includes(mimeType);
 } 
