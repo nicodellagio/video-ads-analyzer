@@ -5,7 +5,6 @@
 import { join } from 'path';
 import { existsSync } from 'fs';
 import { OpenAI } from 'openai';
-import { promises as fsPromises } from 'fs';
 
 // Types pour les résultats de transcription
 export interface TranscriptionWord {
@@ -19,17 +18,6 @@ export interface TranscriptionResult {
   language: string;
   confidence: number;
   words: TranscriptionWord[];
-}
-
-/**
- * Vérifie si l'extension du fichier est compatible avec l'API Whisper d'OpenAI
- * @param filePath Chemin du fichier
- * @returns true si l'extension est compatible, false sinon
- */
-function hasCompatibleExtension(filePath: string): boolean {
-  const compatibleExtensions = ['.mp3', '.mp4', '.mpeg', '.mpga', '.m4a', '.wav', '.webm'];
-  const extension = filePath.substring(filePath.lastIndexOf('.')).toLowerCase();
-  return compatibleExtensions.includes(extension);
 }
 
 /**
@@ -62,7 +50,7 @@ export async function transcribeVideo(
       apiKey: process.env.OPENAI_API_KEY,
     });
 
-    console.log(`Transcription du fichier: ${videoPath}`);
+    console.log(`Transcription de la vidéo: ${videoPath}`);
 
     // Préparer les options de transcription
     const transcriptionOptions: any = {

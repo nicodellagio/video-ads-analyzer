@@ -15,15 +15,6 @@ export async function transcribeVideo(videoUrl: string, source: string) {
 
     if (!response.ok) {
       const errorData = await response.json();
-      
-      // Vérifier si l'erreur contient des détails supplémentaires
-      if (errorData.details) {
-        const error = new Error(errorData.error || 'Error during transcription');
-        (error as any).details = errorData.details;
-        (error as any).supported_formats = errorData.supported_formats;
-        throw error;
-      }
-      
       throw new Error(errorData.error || 'Error during transcription');
     }
 
@@ -31,17 +22,6 @@ export async function transcribeVideo(videoUrl: string, source: string) {
     return await response.json();
   } catch (error) {
     console.error('Transcription error:', error);
-    
-    // Créer un message d'erreur plus convivial si c'est une erreur de format
-    if ((error as Error).message.includes("format de la vidéo n'est pas pris en charge") || 
-        (error as any).details) {
-      const errorWithDetails = new Error(`Le format de la vidéo n'est pas compatible avec la transcription. Veuillez utiliser un format vidéo standard comme MP4 ou audio comme MP3.`);
-      (errorWithDetails as any).isFormatError = true;
-      (errorWithDetails as any).details = (error as any).details || 
-        "OpenAI Whisper ne peut pas traiter ce format. Essayez de convertir votre vidéo avant de l'uploader.";
-      throw errorWithDetails;
-    }
-    
     throw error;
   }
 }
