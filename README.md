@@ -35,40 +35,16 @@ cp .env.example .env.local
 
 Créez un fichier `.env.local` à la racine du projet avec les variables suivantes :
 
+```
 # API Keys
 OPENAI_API_KEY=votre_clé_openai
 CLOUDINARY_CLOUD_NAME=votre_cloud_name
 CLOUDINARY_API_KEY=votre_api_key
 CLOUDINARY_API_SECRET=votre_api_secret
-RAPIDAPI_KEY=votre_clé_rapidapi
 
 # Configuration
 MAX_FILE_SIZE=104857600  # 100MB en octets
-
-## Configuration des API RapidAPI pour l'extraction de vidéos
-
-Pour utiliser les fonctionnalités avancées d'extraction de vidéos à partir de différentes plateformes sociales, l'application utilise les API de RapidAPI :
-
-1. **Créer un compte RapidAPI** :
-   - Rendez-vous sur [RapidAPI](https://rapidapi.com/)
-   - Inscrivez-vous pour obtenir un compte gratuit
-   - Accédez à votre tableau de bord
-
-2. **S'abonner aux API nécessaires** :
-   - [Facebook Reel and Video Downloader](https://rapidapi.com/ytjar/api/facebook-reel-and-video-downloader/)
-   - [Instagram Downloader](https://rapidapi.com/ytjar/api/instagram-downloader-download-instagram-videos-stories/)
-   - [YouTube Video Download Info](https://rapidapi.com/ytjar/api/youtube-video-download-info/)
-   - [TikTok Downloader](https://rapidapi.com/ytjar/api/tiktok-downloader-download-tiktok-videos-without-watermark/)
-
-3. **Obtenir votre clé API** :
-   - Dans votre compte RapidAPI, récupérez votre clé API
-   - Cette clé sera utilisée pour toutes les API mentionnées ci-dessus
-
-4. **Configurer la variable d'environnement** :
-   - Ajoutez la clé dans votre fichier `.env.local` :
-   ```
-   RAPIDAPI_KEY=votre_clé_rapidapi
-   ```
+```
 
 ## Configuration des API Meta (Facebook et Instagram)
 
@@ -142,13 +118,13 @@ npm run dev
 
 ## Prochaines étapes
 
-- [x] Intégration avec RapidAPI pour l'extraction de vidéos
-- [x] Configuration du stockage cloud avec Cloudinary
+- [ ] Intégration avec youtube-dl pour l'extraction de vidéos
 - [ ] Intégration avec OpenAI Whisper pour la transcription
 - [ ] Intégration avec GPT-4/Claude pour l'analyse
+- [ ] Configuration du stockage cloud avec Cloudinary/S3
 - [ ] Mise en place d'une base de données pour stocker les analyses
 - [ ] Système d'authentification utilisateur
-- [x] Déploiement sur Vercel
+- [ ] Déploiement sur Vercel
 
 ## Licence
 

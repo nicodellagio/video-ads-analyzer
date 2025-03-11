@@ -100,7 +100,7 @@ export async function exportReport(transcription: any, analysis: any, format: 'p
 export async function extractVideoFromUrl(url: string, source: 'instagram' | 'meta' | 'youtube' | 'tiktok' | 'upload') {
   try {
     // Call extraction API
-    const response = await fetch('/api/direct-extract', {
+    const response = await fetch('/api/extract', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

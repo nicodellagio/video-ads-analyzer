@@ -1,15 +1,9 @@
 import { join } from 'path';
 import { writeFile, mkdir, unlink } from 'fs/promises';
 import { existsSync, statSync } from 'fs';
-import { UPLOAD_BASE_PATH, isServerless } from '@/lib/config/environment';
 
 // Dossier de téléchargement
-export const UPLOAD_DIR = isServerless 
-  ? join('/tmp', 'uploads') 
-  : join(process.cwd(), 'public', 'uploads');
-
-// URL publique pour les uploads
-export const UPLOAD_URL_PATH = '/uploads';
+export const UPLOAD_DIR = join(process.cwd(), 'public', 'uploads');
 
 // Interface pour les métadonnées vidéo
 export interface VideoMetadata {
@@ -29,13 +23,8 @@ export interface VideoMetadata {
  * S'assure que le dossier de téléchargement existe
  */
 export async function ensureUploadDir(): Promise<void> {
-  try {
-    if (!existsSync(UPLOAD_DIR)) {
-      await mkdir(UPLOAD_DIR, { recursive: true });
-    }
-  } catch (error) {
-    console.error('Erreur lors de la création du dossier de téléchargement:', error);
-    throw new Error(`Impossible de créer le dossier de téléchargement: ${(error as Error).message}`);
+  if (!existsSync(UPLOAD_DIR)) {
+    await mkdir(UPLOAD_DIR, { recursive: true });
   }
 }
 

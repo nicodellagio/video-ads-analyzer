@@ -4,14 +4,6 @@ const nextConfig = {
   experimental: {
     largePageDataBytes: 128 * 1000, // 128KB
   },
-  // Packages externes pour les composants serveur
-  serverExternalPackages: [
-    'fluent-ffmpeg',
-    '@ffprobe-installer/ffprobe',
-    'child_process',
-    '@ffmpeg-installer/ffmpeg',
-    'got'
-  ],
   // Désactiver le linting lors du build
   eslint: {
     ignoreDuringBuilds: true,
@@ -20,10 +12,13 @@ const nextConfig = {
   typescript: {
     ignoreBuildErrors: true,
   },
-  // Configuration pour Vercel
-  env: {
-    VERCEL_ENV: process.env.VERCEL_ENV || 'development',
-  },
+  serverExternalPackages: [
+    'fluent-ffmpeg',
+    '@ffprobe-installer/ffprobe',
+    'child_process',
+    '@ffmpeg-installer/ffmpeg',
+    'got'
+  ],
   webpack: (config, { isServer }) => {
     // Ajouter un fallback pour les modules qui utilisent le browser globals
     if (!isServer) {

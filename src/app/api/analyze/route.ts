@@ -2,9 +2,6 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { OpenAI } from 'openai';
 
-export const maxDuration = 60; // 60 secondes maximum pour le plan hobby de Vercel
-export const dynamic = 'force-dynamic';
-
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
