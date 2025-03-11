@@ -45,6 +45,7 @@ async function extractVideoWithYoutubeDl(url: string): Promise<MetaVideoInfo> {
     const { readdir } = fsPromises;
     const execAsync = promisify(exec);
     const got = await import('got');
+    const path = await import('path');
     
     // Generate a unique ID for the video
     const videoId = uuidv4();
@@ -58,13 +59,30 @@ async function extractVideoWithYoutubeDl(url: string): Promise<MetaVideoInfo> {
       console.log(`Created temporary directory: ${outputDir}`);
     }
     
-    // Vérifier si yt-dlp est installé
+    // Chemin vers le binaire yt-dlp local
+    const ytdlpPath = process.env.VERCEL 
+      ? path.join(process.cwd(), 'bin', 'yt-dlp')
+      : 'yt-dlp'; // Utilise la commande globale en développement
+    
+    console.log(`Using yt-dlp from: ${ytdlpPath}`);
+    
+    // Vérifier si yt-dlp est disponible
     try {
-      await execAsync('which yt-dlp');
+      // Si en mode Vercel, vérifier si le fichier existe
+      if (process.env.VERCEL) {
+        if (!fs.existsSync(ytdlpPath)) {
+          throw new Error(`yt-dlp binary not found at ${ytdlpPath}`);
+        }
+        // Rendre le fichier exécutable (au cas où)
+        await execAsync(`chmod +x ${ytdlpPath}`);
+      } else {
+        // En mode développement, vérifier si la commande est disponible
+        await execAsync('which yt-dlp');
+      }
       
       // Build the yt-dlp command with advanced options
       // Use the --merge-output-format mp4 option to automatically merge
-      const ytdlpCommand = `yt-dlp "${url}" -o "${outputDir}/${outputBaseName}.%(ext)s" --merge-output-format mp4 --no-check-certificate --no-warnings --prefer-free-formats --add-header "referer:https://www.google.com" --add-header "user-agent:Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" --verbose`;
+      const ytdlpCommand = `${ytdlpPath} "${url}" -o "${outputDir}/${outputBaseName}.%(ext)s" --merge-output-format mp4 --no-check-certificate --no-warnings --prefer-free-formats --add-header "referer:https://www.google.com" --add-header "user-agent:Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" --verbose`;
       
       console.log('Executing command:', ytdlpCommand);
       
@@ -73,7 +91,8 @@ async function extractVideoWithYoutubeDl(url: string): Promise<MetaVideoInfo> {
       console.log('yt-dlp stdout:', stdout);
       if (stderr) console.error('yt-dlp stderr:', stderr);
     } catch (cmdError) {
-      console.log('yt-dlp not available, using alternative method for:', url);
+      console.log('yt-dlp not available or error occurred:', cmdError.message);
+      console.log('Falling back to alternative method for:', url);
       
       // Solution alternative pour Vercel: extraction via extraction directe
       if (url.includes('facebook.com')) {
@@ -153,7 +172,7 @@ async function extractVideoWithYoutubeDl(url: string): Promise<MetaVideoInfo> {
     }
     
     // Get video information
-    const infoCommand = `yt-dlp "${url}" --dump-json --no-check-certificate --no-warnings`;
+    const infoCommand = `${ytdlpPath} "${url}" --dump-json --no-check-certificate --no-warnings`;
     console.log('Retrieving information:', infoCommand);
     
     let info;
