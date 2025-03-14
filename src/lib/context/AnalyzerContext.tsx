@@ -75,6 +75,12 @@ export const AnalyzerContext = createContext<{
   processUploadedFile: (file: File) => Promise<void>;
   exportAnalysisReport: (format: ExportFormat) => Promise<void>;
   translateTranscription: (targetLanguage: LanguageCode) => Promise<void>;
+  setVideoUrl: (url: string) => void;
+  setUploadedFile: (file: File | null) => void;
+  resetState: () => void;
+  isVideoUploaded: boolean;
+  isTranscriptionDone: boolean;
+  isAnalysisDone: boolean;
 } | undefined>(undefined);
 
 // Valeurs par défaut du contexte supprimées - elles ne sont plus utilisées
@@ -405,6 +411,11 @@ export const AnalyzerProvider: React.FC<{ children: ReactNode }> = ({ children }
           }
         },
         resetState,
+        setVideoUrl,
+        setUploadedFile,
+        isVideoUploaded,
+        isTranscriptionDone,
+        isAnalysisDone,
       }}
     >
       {children}
