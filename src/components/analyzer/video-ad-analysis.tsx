@@ -121,6 +121,7 @@ export default function VideoAdAnalysis() {
   const [currentTab, setCurrentTab] = useState<string>('instagram');
   const [showError, setShowError] = useState<boolean>(true);
   const [showWarning, setShowWarning] = useState<boolean>(true);
+  const [localVideoUrl, setLocalVideoUrl] = useState<string>(videoUrl || '');
   const [selectedLanguage, setSelectedLanguage] = useState<LanguageCode | null>(null);
   const [realMetadata, setRealMetadata] = useState<{ duration: number; format: string; size: string }>({ duration: 0, format: '', size: '' });
   const [isExporting, setIsExporting] = useState<boolean>(false);
@@ -132,6 +133,13 @@ export default function VideoAdAnalysis() {
   const [currentTime, setCurrentTime] = useState<number>(0);
   const [duration, setDuration] = useState<number>(0);
   const videoRef = useRef<HTMLVideoElement>(null);
+
+  // Synchroniser l'état local avec videoUrl du contexte
+  useEffect(() => {
+    if (videoUrl) {
+      setLocalVideoUrl(videoUrl);
+    }
+  }, [videoUrl]);
 
   // Mettre à jour la langue sélectionnée lorsque la transcription est disponible
   useEffect(() => {
@@ -279,19 +287,19 @@ export default function VideoAdAnalysis() {
 
   const handleUrlSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    if (!videoUrl) return
+    if (!localVideoUrl) return
     setShowError(true)
     resetState()
     
     // Utiliser la source actuelle (onglet) pour le traitement
     if (currentTab === 'instagram') {
-      handleInstagramUrlSubmit(videoUrl);
+      handleInstagramUrlSubmit(localVideoUrl);
     } else if (currentTab === 'meta') {
-      handleYoutubeUrlSubmit(videoUrl);
+      handleYoutubeUrlSubmit(localVideoUrl);
     } else if (currentTab === 'youtube') {
-      handleYoutubeUrlSubmit(videoUrl);
+      handleYoutubeUrlSubmit(localVideoUrl);
     } else if (currentTab === 'tiktok') {
-      handleTikTokUrlSubmit(videoUrl);
+      handleTikTokUrlSubmit(localVideoUrl);
     }
   }
 
@@ -625,8 +633,8 @@ export default function VideoAdAnalysis() {
                         <Input
                           id="instagram-url"
                           placeholder="https://www.instagram.com/reel/..."
-                          value={videoUrl ?? ''}
-                          onChange={(e) => setVideoUrl(e.target.value)}
+                          value={localVideoUrl}
+                          onChange={(e) => setLocalVideoUrl(e.target.value)}
                           className="bg-white border-gray-200 focus:border-black focus:ring-black text-black"
                         />
                         <p className="text-xs text-gray-500 mt-1">
@@ -635,7 +643,7 @@ export default function VideoAdAnalysis() {
                       </div>
                       <Button
                         type="submit"
-                        disabled={isProcessing || !videoUrl}
+                        disabled={isProcessing || !localVideoUrl}
                         className="bg-black hover:bg-gray-900 text-white w-full rounded-full"
                       >
                         {isProcessing ? (
@@ -659,8 +667,8 @@ export default function VideoAdAnalysis() {
                         <Input
                           id="meta-url"
                           placeholder="https://www.facebook.com/ads/library/..."
-                          value={videoUrl ?? ''}
-                          onChange={(e) => setVideoUrl(e.target.value)}
+                          value={localVideoUrl}
+                          onChange={(e) => setLocalVideoUrl(e.target.value)}
                           className="bg-white border-gray-200 focus:border-black focus:ring-black text-black"
                         />
                         <p className="text-xs text-gray-500 mt-1">
@@ -669,7 +677,7 @@ export default function VideoAdAnalysis() {
                       </div>
                       <Button
                         type="submit"
-                        disabled={isProcessing || !videoUrl}
+                        disabled={isProcessing || !localVideoUrl}
                         className="bg-black hover:bg-gray-900 text-white w-full rounded-full"
                       >
                         {isProcessing ? (
