@@ -708,38 +708,24 @@ export default function VideoAdAnalysis() {
               </CardContent>
             </Card>
 
-            {isVideoUploaded && videoMetadata && (
-              <Card className="bg-white border-gray-200 shadow-sm rounded-2xl overflow-hidden mb-6">
-                <CardHeader className="border-b border-gray-100 pb-4">
-                  <div className="flex items-center justify-between">
-                    <CardTitle className="flex items-center gap-2 text-black">Video Preview</CardTitle>
-                    {isProcessing ? (
-                      <Badge className="bg-blue-50 text-blue-600 border-blue-100 px-3 rounded-full">
-                        <Loader2 className="h-3 w-3 mr-1 animate-spin" />
-                        Processing
-                      </Badge>
-                    ) : (
-                      <Badge className="bg-gray-100 text-gray-800 border-gray-200 px-3 rounded-full">
-                        <CheckCircle2 className="h-3 w-3 mr-1" />
-                        Ready
-                      </Badge>
-                    )}
-                  </div>
-                  <CardDescription className="text-gray-500">
-                    Preview of your uploaded video
-                  </CardDescription>
-                </CardHeader>
+            {/* Video Preview Card */}
+            {isVideoUploaded && videoUrl && (
+              <Card className="bg-white border-gray-200 shadow-sm rounded-2xl overflow-hidden">
                 <CardContent className="p-0">
-                  <div className="relative aspect-video bg-black">
+                  <div className="aspect-video relative bg-gray-50 overflow-hidden">
                     <video
                       ref={videoRef}
-                      src={videoMetadata.url}
+                      src={videoUrl}
                       className="w-full h-full object-contain"
-                      controls={false}
                       onLoadedMetadata={handleLoadedMetadata}
-                      muted={isMuted}
-                      playsInline
-                    ></video>
+                      onTimeUpdate={handleTimeUpdate}
+                      onEnded={handleVideoEnded}
+                      onPlay={() => setIsPlaying(true)}
+                      onPause={() => setIsPlaying(false)}
+                      onVolumeChange={(e) => setIsMuted((e.target as HTMLVideoElement).muted)}
+                      onClick={togglePlay}
+                      onError={handleVideoError}
+                    />
                     <div className="absolute inset-0 flex items-center justify-center">
                       {!isPlaying ? (
                         <Button
@@ -807,7 +793,7 @@ export default function VideoAdAnalysis() {
           {/* Output Section */}
           <div>
             {/* Display initial loading state when no elements are available yet */}
-            {isProcessing && !isVideoUploaded && (
+            {isProcessing && !(isVideoUploaded && videoUrl) && (
               <Card className="bg-white border-gray-200 shadow-sm rounded-2xl overflow-hidden h-full">
                 <CardHeader className="border-b border-gray-100 pb-4">
                   <CardTitle className="flex items-center gap-2 text-black">Processing</CardTitle>
@@ -828,7 +814,7 @@ export default function VideoAdAnalysis() {
             )}
 
             {/* Display an error message if the process failed */}
-            {error && !isProcessing && !isVideoUploaded && (
+            {error && !isProcessing && !(isVideoUploaded && videoUrl) && (
               <Card className="bg-white border-gray-200 shadow-sm rounded-2xl overflow-hidden h-full">
                 <CardHeader className="border-b border-gray-100 pb-4 bg-red-50">
                   <CardTitle className="flex items-center gap-2 text-red-700">
