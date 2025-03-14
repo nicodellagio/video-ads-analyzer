@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useContext, useState, ReactNode } from 'react';
+import React, { createContext, useContext, useState, ReactNode, useEffect } from 'react';
 import { 
   transcribeVideo, 
   analyzeContent, 
@@ -77,35 +77,7 @@ export const AnalyzerContext = createContext<{
   translateTranscription: (targetLanguage: LanguageCode) => Promise<void>;
 } | undefined>(undefined);
 
-// Valeurs par défaut du contexte
-const defaultContext: AnalyzerContextType = {
-  videoUrl: '',
-  videoSource: 'instagram',
-  uploadedFile: null,
-  isProcessing: false,
-  isAnalyzed: false,
-  progress: 0,
-  videoMetadata: null,
-  transcription: null,
-  analysis: null,
-  exportUrl: null,
-  error: null,
-  isTranslating: false,
-  
-  // Nouveaux états pour le chargement progressif
-  isVideoUploaded: false,
-  isTranscriptionDone: false,
-  isAnalysisDone: false,
-  
-  setVideoUrl: () => {},
-  setVideoSource: () => {},
-  setUploadedFile: () => {},
-  processVideoUrl: async () => {},
-  processUploadedFile: async () => {},
-  generateExport: async () => {},
-  translateTranscription: async () => {},
-  resetState: () => {},
-};
+// Valeurs par défaut du contexte supprimées - elles ne sont plus utilisées
 
 // Création du contexte
 const AnalyzerProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
@@ -126,6 +98,11 @@ const AnalyzerProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [isVideoUploaded, setIsVideoUploaded] = useState<boolean>(false);
   const [isTranscriptionDone, setIsTranscriptionDone] = useState<boolean>(false);
   const [isAnalysisDone, setIsAnalysisDone] = useState<boolean>(false);
+
+  // Mettre à jour isVideoUploaded lorsque videoUrl change
+  useEffect(() => {
+    setIsVideoUploaded(!!videoUrl);
+  }, [videoUrl]);
 
   // Fonction pour simuler la progression
   const simulateProgress = () => {
@@ -331,6 +308,9 @@ const AnalyzerProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
     }
   };
 
+  // Renommer pour correspondre à l'interface du contexte
+  const exportAnalysisReport = generateExport;
+
   // Réinitialisation de l'état
   const resetState = () => {
     // Arrêter toute simulation de progression en cours
@@ -354,93 +334,6 @@ const AnalyzerProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
     setIsAnalysisDone(false);
   };
 
-  // Si nécessaire, définir une fonction pour déterminer si la vidéo est téléchargée
-  const isVideoUploaded = !!videoUrl;
-
-  // Valeur du contexte
-  const value: AnalyzerContextType = {
-    videoUrl,
-    videoSource,
-    uploadedFile,
-    isProcessing,
-    isAnalyzed,
-    progress,
-    videoMetadata,
-    transcription,
-    analysis,
-    exportUrl,
-    error,
-    isTranslating,
-    
-    // Nouveaux états pour le chargement progressif
-    isVideoUploaded,
-    isTranscriptionDone,
-    isAnalysisDone,
-    
-    setVideoUrl,
-    setVideoSource,
-    setUploadedFile,
-    processVideoUrl,
-    processUploadedFile,
-    generateExport,
-    translateTranscription: async (targetLanguage: LanguageCode) => {
-      if (!transcription) {
-        throw new Error('No transcription to translate');
-      }
-      
-      try {
-        setError(null);
-        setIsTranslating(true);
-        console.log(`Request translation to ${targetLanguage} for text:`, transcription.text.substring(0, 50) + '...');
-        console.log(`Initial transcription state:`, JSON.stringify({
-          hasText: !!transcription.text,
-          language: transcription.language,
-          hasTranslations: !!transcription.translations,
-          availableTranslations: transcription.translations ? Object.keys(transcription.translations) : []
-        }, null, 2));
-        
-        const response = await translateText(transcription.text, targetLanguage);
-        
-        // Extract translated text from response
-        const translatedText = response.translatedText;
-        console.log(`Received translated text (${targetLanguage}):`, translatedText.substring(0, 50) + '...');
-        
-        // Create a new translations object
-        const updatedTranslations = {
-          ...(transcription.translations || {}),
-          [targetLanguage]: translatedText
-        };
-        
-        // Create a new transcription object with updated translations
-        const updatedTranscription = {
-          ...transcription,
-          translations: updatedTranslations
-        };
-        
-        console.log(`Updated transcription state:`, JSON.stringify({
-          hasText: !!updatedTranscription.text,
-          language: updatedTranscription.language,
-          hasTranslations: !!updatedTranscription.translations,
-          availableTranslations: updatedTranscription.translations ? Object.keys(updatedTranscription.translations) : []
-        }, null, 2));
-        
-        // Update state with new object
-        setTranscription(updatedTranscription);
-        console.log(`Transcription updated with translation in ${targetLanguage}`);
-        
-        // Return translated text for immediate use
-        return translatedText;
-      } catch (error: any) {
-        console.error('Translation error:', error);
-        setError(error.message || 'An error occurred while translating');
-        throw error;
-      } finally {
-        setIsTranslating(false);
-      }
-    },
-    resetState,
-  };
-
   return (
     <AnalyzerContext.Provider
       value={{
@@ -456,7 +349,62 @@ const AnalyzerProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
         processVideoUrl,
         processUploadedFile,
         exportAnalysisReport,
-        translateTranscription,
+        translateTranscription: async (targetLanguage: LanguageCode) => {
+          if (!transcription) {
+            throw new Error('No transcription to translate');
+          }
+          
+          try {
+            setError(null);
+            setIsTranslating(true);
+            console.log(`Request translation to ${targetLanguage} for text:`, transcription.text.substring(0, 50) + '...');
+            console.log(`Initial transcription state:`, JSON.stringify({
+              hasText: !!transcription.text,
+              language: transcription.language,
+              hasTranslations: !!transcription.translations,
+              availableTranslations: transcription.translations ? Object.keys(transcription.translations) : []
+            }, null, 2));
+            
+            const response = await translateText(transcription.text, targetLanguage);
+            
+            // Extract translated text from response
+            const translatedText = response.translatedText;
+            console.log(`Received translated text (${targetLanguage}):`, translatedText.substring(0, 50) + '...');
+            
+            // Create a new translations object
+            const updatedTranslations = {
+              ...(transcription.translations || {}),
+              [targetLanguage]: translatedText
+            };
+            
+            // Create a new transcription object with updated translations
+            const updatedTranscription = {
+              ...transcription,
+              translations: updatedTranslations
+            };
+            
+            console.log(`Updated transcription state:`, JSON.stringify({
+              hasText: !!updatedTranscription.text,
+              language: updatedTranscription.language,
+              hasTranslations: !!updatedTranscription.translations,
+              availableTranslations: updatedTranscription.translations ? Object.keys(updatedTranscription.translations) : []
+            }, null, 2));
+            
+            // Update state with new object
+            setTranscription(updatedTranscription);
+            console.log(`Transcription updated with translation in ${targetLanguage}`);
+            
+            // Return translated text for immediate use
+            return translatedText;
+          } catch (error: any) {
+            console.error('Translation error:', error);
+            setError(error.message || 'An error occurred while translating');
+            throw error;
+          } finally {
+            setIsTranslating(false);
+          }
+        },
+        resetState,
       }}
     >
       {children}
