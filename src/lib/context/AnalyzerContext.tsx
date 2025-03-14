@@ -80,7 +80,7 @@ export const AnalyzerContext = createContext<{
 // Valeurs par défaut du contexte supprimées - elles ne sont plus utilisées
 
 // Création du contexte
-const AnalyzerProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
+export const AnalyzerProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [isAnalyzed, setIsAnalyzed] = useState(false);
   const [error, setError] = useState<string | null>(null);
