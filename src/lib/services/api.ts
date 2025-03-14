@@ -141,4 +141,27 @@ export async function uploadVideoFile(file: File) {
     console.error('Video upload error:', error);
     throw error;
   }
+}
+
+// Function for extracting video from Meta platforms (Facebook, Instagram)
+export async function extractMetaAd(url: string) {
+  try {
+    const response = await fetch('/api/extract-meta', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ url }),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error || 'Error extracting video from Meta');
+    }
+
+    return await response.json();
+  } catch (error) {
+    console.error('Meta extraction error:', error);
+    throw error;
+  }
 } 

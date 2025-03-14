@@ -7,7 +7,8 @@ import {
   exportReport, 
   extractVideoFromUrl,
   uploadVideoFile,
-  translateText
+  translateText,
+  extractMetaAd
 } from '@/lib/services/api';
 
 // Types
@@ -180,7 +181,39 @@ export const AnalyzerProvider: React.FC<{ children: ReactNode }> = ({ children }
       const progressInterval = simulateProgress();
       
       // 1. Extraire la vidéo
-      const extractionResult = await extractVideoFromUrl(url, source) as any;
+      let extractionResult;
+      
+      // Utiliser l'API Meta officielle pour les sources Meta
+      if (source === 'meta') {
+        try {
+          console.log("Utilisation de l'API Meta officielle pour l'extraction");
+          extractionResult = await extractMetaAd(url);
+          
+          // Formater le résultat pour qu'il soit compatible avec le reste du flux
+          if (extractionResult.success && extractionResult.videoUrl) {
+            extractionResult = {
+              videoMetadata: {
+                url: extractionResult.videoUrl,
+                duration: '00:00:30', // Valeur par défaut, à remplacer par des données réelles si disponibles
+                format: 'MP4',
+                size: 'Unknown',
+                originalName: `meta_ad_${extractionResult.adDetails.adId}.mp4`,
+                id: extractionResult.adDetails.adId,
+                // Autres métadonnées que vous pourriez avoir
+                source: 'meta',
+                adDetails: extractionResult.adDetails
+              }
+            };
+          }
+        } catch (metaError) {
+          console.error("Erreur avec l'API Meta officielle, tentative avec l'extracteur générique", metaError);
+          // Fallback sur l'extracteur générique en cas d'échec
+          extractionResult = await extractVideoFromUrl(url, source) as any;
+        }
+      } else {
+        // Utiliser l'extracteur générique pour les autres sources
+        extractionResult = await extractVideoFromUrl(url, source) as any;
+      }
       
       // Vérifier la structure de la réponse et extraire les métadonnées vidéo
       let videoData;
