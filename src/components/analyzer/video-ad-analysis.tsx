@@ -282,7 +282,17 @@ export default function VideoAdAnalysis() {
     if (!videoUrl) return
     setShowError(true)
     resetState()
-    processVideoUrl(videoUrl, currentTab as any);
+    
+    // Utiliser la source actuelle (onglet) pour le traitement
+    if (currentTab === 'instagram') {
+      handleInstagramUrlSubmit(videoUrl);
+    } else if (currentTab === 'meta') {
+      handleYoutubeUrlSubmit(videoUrl);
+    } else if (currentTab === 'youtube') {
+      handleYoutubeUrlSubmit(videoUrl);
+    } else if (currentTab === 'tiktok') {
+      handleTikTokUrlSubmit(videoUrl);
+    }
   }
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -615,7 +625,7 @@ export default function VideoAdAnalysis() {
                         <Input
                           id="instagram-url"
                           placeholder="https://www.instagram.com/reel/..."
-                          value={videoUrl}
+                          value={videoUrl ?? ''}
                           onChange={(e) => setVideoUrl(e.target.value)}
                           className="bg-white border-gray-200 focus:border-black focus:ring-black text-black"
                         />
@@ -649,7 +659,7 @@ export default function VideoAdAnalysis() {
                         <Input
                           id="meta-url"
                           placeholder="https://www.facebook.com/ads/library/..."
-                          value={videoUrl}
+                          value={videoUrl ?? ''}
                           onChange={(e) => setVideoUrl(e.target.value)}
                           className="bg-white border-gray-200 focus:border-black focus:ring-black text-black"
                         />
