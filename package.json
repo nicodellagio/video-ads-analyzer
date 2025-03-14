@@ -23,6 +23,7 @@
     "class-variance-authority": "^0.7.1",
     "cloudinary": "^2.5.1",
     "clsx": "^2.1.1",
+    "facebook-nodejs-business-sdk": "^22.0.0",
     "ffmpeg-static": "^5.2.0",
     "file-type": "^20.4.0",
     "fluent-ffmpeg": "^2.1.3",
