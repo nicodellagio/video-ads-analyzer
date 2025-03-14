@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { BusinessAdsAPI, AdCreative, Ad } from 'facebook-nodejs-business-sdk';
+import bizSdk from 'facebook-nodejs-business-sdk';
+
+// Extraction des classes nécessaires du SDK
+const {Ad, AdCreative} = bizSdk;
+const BusinessAdsAPI = bizSdk.FacebookAdsApi;
 
 // Configuration des identifiants Meta
 const APP_ID = process.env.META_APP_ID;
@@ -33,8 +37,7 @@ async function getAdDetails(adId: string) {
     }
 
     // Initialiser l'API avec les identifiants
-    const api = new BusinessAdsAPI();
-    api.init(APP_ID, APP_SECRET, ACCESS_TOKEN);
+    const api = BusinessAdsAPI.init(APP_ID, APP_SECRET, ACCESS_TOKEN);
 
     // Récupérer l'annonce
     const ad = new Ad(adId);
