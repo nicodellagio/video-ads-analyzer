@@ -66,6 +66,10 @@ async function createReadStreamFromPath(path: string): Promise<File | Buffer> {
       // Extraire le nom du fichier
       const fileName = path.split('/').pop()?.split('?')[0] || 'audio.mp4';
       
+      // IMPORTANT: Traiter uniquement la piste audio pour les vidéos MP4
+      // Pour les fichiers vidéo, nous devons extraire la piste audio avec FFmpeg
+      // Mais puisque c'est complexe à faire côté client, nous allons forcer le type MIME
+      
       // IMPORTANT: Forcer le type MIME à audio/mp4 pour garantir la compatibilité avec OpenAI
       // Les formats acceptés par OpenAI: 'flac', 'm4a', 'mp3', 'mp4', 'mpeg', 'mpga', 'oga', 'ogg', 'wav', 'webm'
       let mimeType = 'audio/mp4';
@@ -84,8 +88,16 @@ async function createReadStreamFromPath(path: string): Promise<File | Buffer> {
         mimeType = 'audio/webm';
       }
       
-      console.log(`Création du fichier avec le type MIME forcé: ${mimeType}, nom: ${fileName}`);
-      const file = new File([blob], fileName, { type: mimeType });
+      // S'assurer que l'extension correspond au type MIME (important pour OpenAI)
+      let newFileName = fileName;
+      if (mimeType === 'audio/mp4' && !fileName.toLowerCase().endsWith('.mp4')) {
+        newFileName = `${fileName.split('.')[0]}.mp4`;
+      } else if (mimeType === 'audio/mpeg' && !fileName.toLowerCase().endsWith('.mp3')) {
+        newFileName = `${fileName.split('.')[0]}.mp3`;
+      }
+      
+      console.log(`Création du fichier avec le type MIME forcé: ${mimeType}, nom: ${newFileName}`);
+      const file = new File([blob], newFileName, { type: mimeType });
       
       return file;
     } catch (error) {
@@ -122,9 +134,14 @@ async function createReadStreamFromPath(path: string): Promise<File | Buffer> {
         mimeType = 'audio/webm';
       }
       
-      // En environnement Node.js, nous devons créer un Blob à partir du buffer
-      // puis créer un File à partir du Blob pour la compatibilité avec l'API OpenAI
       console.log(`Préparation du fichier local avec le type MIME: ${mimeType}, nom: ${fileName}`);
+      
+      // Vérifier que l'extension du fichier est conforme aux attentes d'OpenAI
+      if (!['mp3', 'mp4', 'mpeg', 'mpga', 'm4a', 'wav', 'webm', 'flac', 'ogg', 'oga'].some(ext => 
+          fileName.toLowerCase().endsWith(`.${ext}`))) {
+        console.error(`Extension de fichier non supportée: ${fileName}`);
+        throw new Error(`Format de fichier non supporté. L'API de transcription accepte uniquement les formats audio: flac, m4a, mp3, mp4, mpeg, mpga, oga, ogg, wav, webm.`);
+      }
       
       // L'API OpenAI en Node.js accepte également les ReadStream, essayons cette approche
       const readStream = fs.createReadStream(path);

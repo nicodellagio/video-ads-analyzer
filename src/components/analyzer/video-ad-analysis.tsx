@@ -100,6 +100,7 @@ export default function VideoAdAnalysis() {
     transcription,
     analysis,
     error,
+    warning,
     isTranslating,
     
     // Nouveaux états pour le chargement progressif
@@ -119,6 +120,7 @@ export default function VideoAdAnalysis() {
   // Local UI state
   const [currentTab, setCurrentTab] = useState<string>('instagram');
   const [showError, setShowError] = useState<boolean>(true);
+  const [showWarning, setShowWarning] = useState<boolean>(true);
   const [selectedLanguage, setSelectedLanguage] = useState<LanguageCode | null>(null);
   const [realMetadata, setRealMetadata] = useState<{ duration: number; format: string; size: string }>({ duration: 0, format: '', size: '' });
   const [isExporting, setIsExporting] = useState<boolean>(false);
@@ -426,6 +428,11 @@ export default function VideoAdAnalysis() {
     setShowError(false);
   }
 
+  // Fermer le message d'avertissement
+  const dismissWarning = () => {
+    setShowWarning(false);
+  }
+
   // Vérifier si l'utilisateur revient d'une authentification Google
   useEffect(() => {
     // Vérifier si l'URL contient un paramètre d'erreur d'authentification
@@ -544,6 +551,25 @@ export default function VideoAdAnalysis() {
           </div>
         )}
 
+        {/* Warning display */}
+        {warning && showWarning && (
+          <div className="mb-6 bg-amber-50 border border-amber-200 rounded-lg p-4 flex items-start">
+            <AlertCircle className="h-5 w-5 text-amber-500 mt-0.5 mr-3 flex-shrink-0" />
+            <div className="flex-1">
+              <p className="text-amber-800 font-medium">Attention</p>
+              <p className="text-amber-700 text-sm">{warning}</p>
+            </div>
+            <Button 
+              variant="ghost" 
+              size="sm" 
+              className="text-gray-500 hover:text-gray-700"
+              onClick={dismissWarning}
+            >
+              <X className="h-4 w-4" />
+            </Button>
+          </div>
+        )}
+
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
           {/* Input Section */}
           <div>
@@ -589,7 +615,7 @@ export default function VideoAdAnalysis() {
                         <Input
                           id="instagram-url"
                           placeholder="https://www.instagram.com/reel/..."
-                          value={videoUrl || ''}
+                          value={videoUrl}
                           onChange={(e) => setVideoUrl(e.target.value)}
                           className="bg-white border-gray-200 focus:border-black focus:ring-black text-black"
                         />
@@ -623,7 +649,7 @@ export default function VideoAdAnalysis() {
                         <Input
                           id="meta-url"
                           placeholder="https://www.facebook.com/ads/library/..."
-                          value={videoUrl || ''}
+                          value={videoUrl}
                           onChange={(e) => setVideoUrl(e.target.value)}
                           className="bg-white border-gray-200 focus:border-black focus:ring-black text-black"
                         />
@@ -708,24 +734,38 @@ export default function VideoAdAnalysis() {
               </CardContent>
             </Card>
 
-            {/* Video Preview Card */}
-            {isVideoUploaded && videoUrl && (
-              <Card className="bg-white border-gray-200 shadow-sm rounded-2xl overflow-hidden">
+            {isVideoUploaded && videoMetadata && (
+              <Card className="bg-white border-gray-200 shadow-sm rounded-2xl overflow-hidden mb-6">
+                <CardHeader className="border-b border-gray-100 pb-4">
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="flex items-center gap-2 text-black">Video Preview</CardTitle>
+                    {isProcessing ? (
+                      <Badge className="bg-blue-50 text-blue-600 border-blue-100 px-3 rounded-full">
+                        <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                        Processing
+                      </Badge>
+                    ) : (
+                      <Badge className="bg-gray-100 text-gray-800 border-gray-200 px-3 rounded-full">
+                        <CheckCircle2 className="h-3 w-3 mr-1" />
+                        Ready
+                      </Badge>
+                    )}
+                  </div>
+                  <CardDescription className="text-gray-500">
+                    Preview of your uploaded video
+                  </CardDescription>
+                </CardHeader>
                 <CardContent className="p-0">
-                  <div className="aspect-video relative bg-gray-50 overflow-hidden">
+                  <div className="relative aspect-video bg-black">
                     <video
                       ref={videoRef}
-                      src={videoUrl}
+                      src={videoMetadata.url}
                       className="w-full h-full object-contain"
+                      controls={false}
                       onLoadedMetadata={handleLoadedMetadata}
-                      onTimeUpdate={handleTimeUpdate}
-                      onEnded={handleVideoEnded}
-                      onPlay={() => setIsPlaying(true)}
-                      onPause={() => setIsPlaying(false)}
-                      onVolumeChange={(e) => setIsMuted((e.target as HTMLVideoElement).muted)}
-                      onClick={togglePlay}
-                      onError={handleVideoError}
-                    />
+                      muted={isMuted}
+                      playsInline
+                    ></video>
                     <div className="absolute inset-0 flex items-center justify-center">
                       {!isPlaying ? (
                         <Button
@@ -793,7 +833,7 @@ export default function VideoAdAnalysis() {
           {/* Output Section */}
           <div>
             {/* Display initial loading state when no elements are available yet */}
-            {isProcessing && !(isVideoUploaded && videoUrl) && (
+            {isProcessing && !isVideoUploaded && (
               <Card className="bg-white border-gray-200 shadow-sm rounded-2xl overflow-hidden h-full">
                 <CardHeader className="border-b border-gray-100 pb-4">
                   <CardTitle className="flex items-center gap-2 text-black">Processing</CardTitle>
@@ -814,7 +854,7 @@ export default function VideoAdAnalysis() {
             )}
 
             {/* Display an error message if the process failed */}
-            {error && !isProcessing && !(isVideoUploaded && videoUrl) && (
+            {error && !isProcessing && !isVideoUploaded && (
               <Card className="bg-white border-gray-200 shadow-sm rounded-2xl overflow-hidden h-full">
                 <CardHeader className="border-b border-gray-100 pb-4 bg-red-50">
                   <CardTitle className="flex items-center gap-2 text-red-700">
