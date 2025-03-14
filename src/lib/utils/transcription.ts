@@ -94,10 +94,21 @@ async function createReadStreamFromPath(path: string): Promise<File | Buffer> {
     }
   } else {
     // Environnement local - utiliser le système de fichiers
-    // Nous devons retourner un Buffer pour l'API OpenAI
-    const fs = await import('fs');
-    const buffer = fs.readFileSync(path);
-    return buffer;
+    try {
+      const fs = await import('fs');
+      
+      // Récupérer le contenu du fichier
+      const buffer = fs.readFileSync(path);
+      console.log(`Fichier local lu: ${path}, taille=${buffer.length} octets`);
+      
+      // En environnement local, adapter le type de fichier pour OpenAI
+      // OpenAI vérifie les types de fichiers côté serveur mais pas pour node.js
+      // Pour les fichiers locaux, on renvoie directement le buffer
+      return buffer;
+    } catch (error) {
+      console.error('Error reading local file:', error);
+      throw new Error(`Error reading local file: ${(error as Error).message}`);
+    }
   }
 }
 

@@ -60,6 +60,14 @@ export async function POST(request: NextRequest) {
       // Pour le stockage local, vérifier si le fichier existe
       fileExists = existsSync(videoPath);
       console.log(`Checking local file existence: ${videoPath}, exists: ${fileExists}`);
+      
+      // Si le fichier local n'existe pas, mais que l'URL semble être un chemin relatif valide,
+      // essayer de traiter l'URL directement
+      if (!fileExists && videoUrl && (videoUrl.startsWith('/uploads/') || videoUrl.includes('/public/'))) {
+        console.log(`Local file not found but URL looks valid: ${videoUrl}`);
+        // On va essayer de transcriber directement avec l'URL plutôt que le chemin local
+        fileExists = true;
+      }
     }
     
     if (!fileExists) {
@@ -83,6 +91,16 @@ export async function POST(request: NextRequest) {
         
         // Si l'URL contient des paramètres de requête (comme les signatures AWS), les garder
         console.log(`Using S3 URL for transcription: ${pathForTranscription}`);
+      } else if (!USE_S3_STORAGE && videoUrl.startsWith('/')) {
+        // En environnement local, si l'URL commence par /, utiliser le chemin relatif
+        // Cela permet de gérer les fichiers dans /public 
+        const publicPath = process.cwd() + videoUrl;
+        if (existsSync(publicPath)) {
+          pathForTranscription = publicPath;
+          console.log(`Using public path for transcription: ${pathForTranscription}`);
+        } else {
+          console.log(`Using local path for transcription: ${pathForTranscription}`);
+        }
       } else {
         console.log(`Using local path for transcription: ${pathForTranscription}`);
       }

@@ -354,12 +354,29 @@ export default function VideoAdAnalysis() {
   // Fonctions pour contrôler la lecture vidéo
   const togglePlay = () => {
     if (videoRef.current) {
-      if (isPlaying) {
-        videoRef.current.pause();
-      } else {
-        videoRef.current.play().catch(e => console.error('Erreur de lecture vidéo:', e));
+      try {
+        if (isPlaying) {
+          videoRef.current.pause();
+          setIsPlaying(false);
+        } else {
+          // Utiliser une promesse pour gérer correctement la lecture
+          const playPromise = videoRef.current.play();
+          if (playPromise !== undefined) {
+            playPromise
+              .then(() => {
+                setIsPlaying(true);
+              })
+              .catch(e => {
+                console.error('Erreur de lecture vidéo:', e);
+                // Ne pas changer l'état si la lecture échoue
+              });
+          } else {
+            setIsPlaying(true); // Fallback pour les anciens navigateurs
+          }
+        }
+      } catch (error) {
+        console.error('Erreur lors du contrôle de la vidéo:', error);
       }
-      setIsPlaying(!isPlaying);
     }
   };
   
