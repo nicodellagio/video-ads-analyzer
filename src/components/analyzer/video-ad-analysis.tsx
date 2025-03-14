@@ -100,7 +100,6 @@ export default function VideoAdAnalysis() {
     transcription,
     analysis,
     error,
-    warning,
     isTranslating,
     
     // Nouveaux états pour le chargement progressif
@@ -120,8 +119,6 @@ export default function VideoAdAnalysis() {
   // Local UI state
   const [currentTab, setCurrentTab] = useState<string>('instagram');
   const [showError, setShowError] = useState<boolean>(true);
-  const [showWarning, setShowWarning] = useState<boolean>(true);
-  const [localVideoUrl, setLocalVideoUrl] = useState<string>(videoUrl || '');
   const [selectedLanguage, setSelectedLanguage] = useState<LanguageCode | null>(null);
   const [realMetadata, setRealMetadata] = useState<{ duration: number; format: string; size: string }>({ duration: 0, format: '', size: '' });
   const [isExporting, setIsExporting] = useState<boolean>(false);
@@ -133,13 +130,6 @@ export default function VideoAdAnalysis() {
   const [currentTime, setCurrentTime] = useState<number>(0);
   const [duration, setDuration] = useState<number>(0);
   const videoRef = useRef<HTMLVideoElement>(null);
-
-  // Synchroniser l'état local avec videoUrl du contexte
-  useEffect(() => {
-    if (videoUrl) {
-      setLocalVideoUrl(videoUrl);
-    }
-  }, [videoUrl]);
 
   // Mettre à jour la langue sélectionnée lorsque la transcription est disponible
   useEffect(() => {
@@ -287,20 +277,10 @@ export default function VideoAdAnalysis() {
 
   const handleUrlSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    if (!localVideoUrl) return
+    if (!videoUrl) return
     setShowError(true)
     resetState()
-    
-    // Utiliser la source actuelle (onglet) pour le traitement
-    if (currentTab === 'instagram') {
-      handleInstagramUrlSubmit(localVideoUrl);
-    } else if (currentTab === 'meta') {
-      handleYoutubeUrlSubmit(localVideoUrl);
-    } else if (currentTab === 'youtube') {
-      handleYoutubeUrlSubmit(localVideoUrl);
-    } else if (currentTab === 'tiktok') {
-      handleTikTokUrlSubmit(localVideoUrl);
-    }
+    processVideoUrl(videoUrl, currentTab as any);
   }
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -446,11 +426,6 @@ export default function VideoAdAnalysis() {
     setShowError(false);
   }
 
-  // Fermer le message d'avertissement
-  const dismissWarning = () => {
-    setShowWarning(false);
-  }
-
   // Vérifier si l'utilisateur revient d'une authentification Google
   useEffect(() => {
     // Vérifier si l'URL contient un paramètre d'erreur d'authentification
@@ -569,25 +544,6 @@ export default function VideoAdAnalysis() {
           </div>
         )}
 
-        {/* Warning display */}
-        {warning && showWarning && (
-          <div className="mb-6 bg-amber-50 border border-amber-200 rounded-lg p-4 flex items-start">
-            <AlertCircle className="h-5 w-5 text-amber-500 mt-0.5 mr-3 flex-shrink-0" />
-            <div className="flex-1">
-              <p className="text-amber-800 font-medium">Attention</p>
-              <p className="text-amber-700 text-sm">{warning}</p>
-            </div>
-            <Button 
-              variant="ghost" 
-              size="sm" 
-              className="text-gray-500 hover:text-gray-700"
-              onClick={dismissWarning}
-            >
-              <X className="h-4 w-4" />
-            </Button>
-          </div>
-        )}
-
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
           {/* Input Section */}
           <div>
@@ -633,8 +589,8 @@ export default function VideoAdAnalysis() {
                         <Input
                           id="instagram-url"
                           placeholder="https://www.instagram.com/reel/..."
-                          value={localVideoUrl}
-                          onChange={(e) => setLocalVideoUrl(e.target.value)}
+                          value={videoUrl}
+                          onChange={(e) => setVideoUrl(e.target.value)}
                           className="bg-white border-gray-200 focus:border-black focus:ring-black text-black"
                         />
                         <p className="text-xs text-gray-500 mt-1">
@@ -643,7 +599,7 @@ export default function VideoAdAnalysis() {
                       </div>
                       <Button
                         type="submit"
-                        disabled={isProcessing || !localVideoUrl}
+                        disabled={isProcessing || !videoUrl}
                         className="bg-black hover:bg-gray-900 text-white w-full rounded-full"
                       >
                         {isProcessing ? (
@@ -667,8 +623,8 @@ export default function VideoAdAnalysis() {
                         <Input
                           id="meta-url"
                           placeholder="https://www.facebook.com/ads/library/..."
-                          value={localVideoUrl}
-                          onChange={(e) => setLocalVideoUrl(e.target.value)}
+                          value={videoUrl}
+                          onChange={(e) => setVideoUrl(e.target.value)}
                           className="bg-white border-gray-200 focus:border-black focus:ring-black text-black"
                         />
                         <p className="text-xs text-gray-500 mt-1">
@@ -677,7 +633,7 @@ export default function VideoAdAnalysis() {
                       </div>
                       <Button
                         type="submit"
-                        disabled={isProcessing || !localVideoUrl}
+                        disabled={isProcessing || !videoUrl}
                         className="bg-black hover:bg-gray-900 text-white w-full rounded-full"
                       >
                         {isProcessing ? (

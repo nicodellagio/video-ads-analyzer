@@ -61,8 +61,9 @@ interface AnalysisResult {
   };
 }
 
-export interface AnalyzerContextType {
-  videoUrl: string | null;
+interface AnalyzerContextType {
+  // State
+  videoUrl: string;
   videoSource: VideoSource;
   uploadedFile: File | null;
   isProcessing: boolean;
@@ -71,23 +72,29 @@ export interface AnalyzerContextType {
   videoMetadata: VideoMetadata | null;
   transcription: Transcription | null;
   analysis: AnalysisResult | null;
+  exportUrl: string | null;
   error: string | null;
-  warning: string | null;
   isTranslating: boolean;
-  reset: () => void;
+  
+  // New states for progressive loading
+  isVideoUploaded: boolean;
+  isTranscriptionDone: boolean;
+  isAnalysisDone: boolean;
+  
+  // Actions
+  setVideoUrl: (url: string) => void;
   setVideoSource: (source: VideoSource) => void;
-  handleFileUpload: (event: React.ChangeEvent<HTMLInputElement>) => void;
-  handleInstagramUrlSubmit: (url: string) => void;
-  handleYoutubeUrlSubmit: (url: string) => void;
-  handleTikTokUrlSubmit: (url: string) => void;
-  handleDropFile: (files: FileList) => void;
-  handleTranslate: () => void;
-  exportAnalysis: () => void;
+  setUploadedFile: (file: File | null) => void;
+  processVideoUrl: (url: string, source: VideoSource) => Promise<void>;
+  processUploadedFile: (file: File) => Promise<void>;
+  generateExport: (format: ExportFormat) => Promise<any>;
+  translateTranscription: (targetLanguage: LanguageCode) => Promise<void>;
+  resetState: () => void;
 }
 
 // Valeurs par défaut du contexte
 const defaultContext: AnalyzerContextType = {
-  videoUrl: null,
+  videoUrl: '',
   videoSource: 'instagram',
   uploadedFile: null,
   isProcessing: false,
@@ -96,18 +103,23 @@ const defaultContext: AnalyzerContextType = {
   videoMetadata: null,
   transcription: null,
   analysis: null,
+  exportUrl: null,
   error: null,
-  warning: null,
   isTranslating: false,
-  reset: () => {},
+  
+  // Nouveaux états pour le chargement progressif
+  isVideoUploaded: false,
+  isTranscriptionDone: false,
+  isAnalysisDone: false,
+  
+  setVideoUrl: () => {},
   setVideoSource: () => {},
-  handleFileUpload: () => {},
-  handleInstagramUrlSubmit: () => {},
-  handleYoutubeUrlSubmit: () => {},
-  handleTikTokUrlSubmit: () => {},
-  handleDropFile: () => {},
-  handleTranslate: () => {},
-  exportAnalysis: () => {},
+  setUploadedFile: () => {},
+  processVideoUrl: async () => {},
+  processUploadedFile: async () => {},
+  generateExport: async () => {},
+  translateTranscription: async () => {},
+  resetState: () => {},
 };
 
 // Création du contexte
@@ -119,19 +131,17 @@ export const useAnalyzer = () => useContext(AnalyzerContext);
 // Provider du contexte
 export const AnalyzerProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   // State
-  const [videoUrl, setVideoUrl] = useState<string | null>(null);
-  const [serverVideoUrl, setServerVideoUrl] = useState<string | null>(null);
-  const [transcription, setTranscription] = useState<any>(null);
-  const [analysis, setAnalysis] = useState<any>(null);
-  const [videoMetadata, setVideoMetadata] = useState<VideoMetadata | null>(null);
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [isAnalyzed, setIsAnalyzed] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [warning, setWarning] = useState<string | null>(null);
-  const [uploadProgress, setUploadProgress] = useState(0);
-  const [progress, setProgress] = useState(0);
+  const [videoUrl, setVideoUrl] = useState<string>('');
   const [videoSource, setVideoSource] = useState<VideoSource>('instagram');
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
+  const [isProcessing, setIsProcessing] = useState<boolean>(false);
+  const [isAnalyzed, setIsAnalyzed] = useState<boolean>(false);
+  const [progress, setProgress] = useState<number>(0);
+  const [videoMetadata, setVideoMetadata] = useState<VideoMetadata | null>(null);
+  const [transcription, setTranscription] = useState<Transcription | null>(null);
+  const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
+  const [exportUrl, setExportUrl] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [isTranslating, setIsTranslating] = useState<boolean>(false);
   
   // Progressive loading states
@@ -154,219 +164,152 @@ export const AnalyzerProvider: React.FC<{ children: ReactNode }> = ({ children }
   };
 
   // Traitement d'une URL de vidéo
-  const processVideoUrl = async (videoUrl: string) => {
-    setIsProcessing(true);
-    setError(null);
-    setWarning(null);
-    setProgress(10);
-    
+  const processVideoUrl = async (url: string, source: VideoSource) => {
     try {
-      console.log('Traitement de la vidéo à partir de l\'URL:', videoUrl);
+      setError(null);
+      setIsProcessing(true);
+      setIsAnalyzed(false); // Réinitialiser l'état d'analyse
+      setAnalysis(null); // Réinitialiser l'analyse précédente
+      setTranscription(null); // Réinitialiser la transcription précédente
       
-      // Extraire les métadonnées de la vidéo
-      try {
-        const metadata = await extractVideoMetadata(videoUrl);
-        if (metadata) {
-          setVideoMetadata(metadata);
-          console.log('Métadonnées extraites:', metadata);
-        }
-      } catch (metadataError) {
-        console.error('Erreur lors de l\'extraction des métadonnées:', metadataError);
-        // Continuer même si l'extraction des métadonnées échoue
+      // Réinitialiser les états de progression
+      setIsVideoUploaded(false);
+      setIsTranscriptionDone(false);
+      setIsAnalysisDone(false);
+      
+      const progressInterval = simulateProgress();
+      
+      // 1. Extraire la vidéo
+      const extractionResult = await extractVideoFromUrl(url, source) as any;
+      
+      // Vérifier la structure de la réponse et extraire les métadonnées vidéo
+      let videoData;
+      if (extractionResult.videoMetadata) {
+        videoData = extractionResult.videoMetadata;
+      } else if (extractionResult.video) {
+        videoData = extractionResult.video;
+      } else {
+        throw new Error("Invalid response extraction format");
       }
       
-      // Mettre à jour la vidéo immédiatement, même si la transcription peut échouer
-      setVideoUrl(videoUrl);
-      setProgress(30);
+      setVideoMetadata(videoData);
+      setIsVideoUploaded(true); // Marquer l'extraction comme terminée
+      setProgress(33); // Mettre à jour la progression
       
-      // Transcription de la vidéo
-      let transcriptionResult;
-      try {
-        console.log('Transcription de la vidéo en cours...');
-        transcriptionResult = await transcribeVideo(videoUrl, { responseFormat: 'verbose_json' });
-        console.log('Transcription réussie:', transcriptionResult);
-        setTranscription(transcriptionResult);
-        setProgress(70);
-      } catch (transcriptionError) {
-        console.error('Erreur lors de la transcription:', transcriptionError);
-        
-        // Si nous avons un message d'erreur spécifique concernant le format de fichier, l'afficher
-        if ((transcriptionError as Error).message.includes('Format de fichier non supporté')) {
-          setWarning('La transcription a échoué car le format du fichier n\'est pas pris en charge. L\'API OpenAI accepte uniquement les formats audio: flac, m4a, mp3, mp4, mpeg, mpga, oga, ogg, wav, webm.');
-        } else {
-          setWarning('La transcription a échoué, mais la vidéo reste disponible pour visionnage.');
-        }
-        
-        // Marquer le processus comme terminé mais avec un avertissement
-        setIsProcessing(false);
-        setIsAnalyzed(true);
-        setProgress(100);
-        return; // Sortir de la fonction, la vidéo est déjà affichée
+      // 2. Transcription de la vidéo
+      const transcriptionResult = await transcribeVideo(
+        videoData.url, 
+        source
+      );
+      console.log("Transcription result:", JSON.stringify(transcriptionResult, null, 2));
+      setTranscription(transcriptionResult);
+      setIsTranscriptionDone(true); // Marquer la transcription comme terminée
+      setProgress(66); // Mettre à jour la progression
+      
+      // 3. Analyse du contenu
+      const analysisResult = await analyzeContent(
+        transcriptionResult, 
+        videoData
+      );
+      console.log("Analysis result:", JSON.stringify(analysisResult, null, 2));
+      
+      // S'assurer que l'analyse est correctement structurée
+      if (analysisResult && analysisResult.analysis) {
+        setAnalysis(analysisResult.analysis);
+        setIsAnalysisDone(true); // Marquer l'analyse comme terminée
+      } else {
+        console.error("Invalid analysis structure:", analysisResult);
+        throw new Error("The analysis structure is invalid");
       }
       
-      // Analyse du contenu si la transcription est disponible
-      if (transcriptionResult) {
-        try {
-          console.log('Analyse du contenu en cours...');
-          // On peut procéder à l'analyse si nous avons une transcription
-          const analysisResult = await analyzeContent(transcriptionResult);
-          
-          // Vérifier si la structure de l'analyse est valide
-          if (analysisResult && typeof analysisResult === 'object') {
-            setAnalysis(analysisResult);
-            console.log('Analyse terminée:', analysisResult);
-          } else {
-            console.error('Résultat d\'analyse invalide:', analysisResult);
-            setWarning('L\'analyse n\'a pas produit de résultats valides, mais la vidéo et la transcription sont disponibles.');
-          }
-        } catch (analysisError) {
-          console.error('Erreur lors de l\'analyse:', analysisError);
-          setWarning('L\'analyse a échoué, mais la vidéo et la transcription restent disponibles.');
-        }
-      }
-      
-      // Marquer le processus comme terminé
-      setIsProcessing(false);
-      setIsAnalyzed(true);
+      clearInterval(progressInterval);
       setProgress(100);
-      
-    } catch (error) {
-      console.error('Erreur lors du traitement de la vidéo:', error);
-      // En cas d'erreur générale, on réinitialise les états de progression
-      // mais on conserve la vidéo si elle a été définie
+      setIsAnalyzed(true);
+      setIsProcessing(false);
+    } catch (error: any) {
+      console.error('Error processing URL:', error);
       setIsProcessing(false);
       setProgress(0);
-      setError(`Erreur lors du traitement de la vidéo: ${(error as Error).message}`);
+      setError(error.message || 'An error occurred while processing the URL');
+      
+      // Reset progress states
+      setIsVideoUploaded(false);
+      setIsTranscriptionDone(false);
+      setIsAnalysisDone(false);
     }
   };
 
   // Traitement d'un fichier téléchargé
   const processUploadedFile = async (file: File) => {
-    setIsProcessing(true);
-    setError(null);
-    setWarning(null);
-    setUploadProgress(0);
-    setProgress(10);
-    
     try {
-      // Commencer par uploader la vidéo
-      console.log(`Début de l'upload du fichier: ${file.name} (${file.size} octets, type: ${file.type})`);
+      setError(null);
+      setIsProcessing(true);
+      setIsAnalyzed(false); // Réinitialiser l'état d'analyse
+      setAnalysis(null); // Réinitialiser l'analyse précédente
+      setTranscription(null); // Réinitialiser la transcription précédente
       
-      // Conserver la vidéo localement pour l'affichage immédiat
-      const localVideoUrl = URL.createObjectURL(file);
-      setVideoUrl(localVideoUrl);
-      setProgress(20);
+      // Réinitialiser les états de progression
+      setIsVideoUploaded(false);
+      setIsTranscriptionDone(false);
+      setIsAnalysisDone(false);
       
-      // Uploader la vidéo sur le serveur
-      try {
-        const formData = new FormData();
-        formData.append('file', file);
-        
-        // Effectuer l'upload avec suivi de progression
-        const uploadResponse = await fetch('/api/upload', {
-          method: 'POST',
-          body: formData
-        });
-        
-        if (!uploadResponse.ok) {
-          const errorMessage = await uploadResponse.text();
-          throw new Error(`Erreur lors de l'upload: ${uploadResponse.status} - ${errorMessage}`);
-        }
-        
-        const uploadResult = await uploadResponse.json();
-        console.log('Résultat de l\'upload:', uploadResult);
-        
-        if (!uploadResult.url) {
-          throw new Error('L\'URL de la vidéo est manquante dans la réponse d\'upload');
-        }
-        
-        setServerVideoUrl(uploadResult.url);
-        setProgress(40);
-      } catch (uploadError) {
-        console.error('Erreur lors de l\'upload:', uploadError);
-        setWarning(`L\'upload sur le serveur a échoué, mais la vidéo locale reste disponible pour visionnage. Erreur: ${(uploadError as Error).message}`);
-        // Continuer avec la version locale de la vidéo
-        setProgress(40); // Passer à l'étape suivante malgré l'erreur
+      const progressInterval = simulateProgress();
+      
+      // 1. Télécharger le fichier
+      const uploadResult = await uploadVideoFile(file) as any;
+      
+      // Vérifier la structure de la réponse
+      if (!uploadResult || !uploadResult.videoMetadata) {
+        throw new Error("Invalid upload response format");
       }
       
-      // Extraire les métadonnées de la vidéo
-      try {
-        const metadata = await extractVideoMetadata(localVideoUrl);
-        if (metadata) {
-          setVideoMetadata(metadata);
-          console.log('Métadonnées extraites:', metadata);
-        }
-      } catch (metadataError) {
-        console.error('Erreur lors de l\'extraction des métadonnées:', metadataError);
-        // Continuer même si l'extraction des métadonnées échoue
+      setVideoMetadata(uploadResult.videoMetadata);
+      setIsVideoUploaded(true); // Marquer le téléchargement comme terminé
+      setProgress(33); // Mettre à jour la progression
+      
+      // 2. Transcription de la vidéo
+      const transcriptionResult = await transcribeVideo(
+        uploadResult.videoMetadata.url, 
+        'upload'
+      );
+      console.log("Transcription result:", JSON.stringify(transcriptionResult, null, 2));
+      setTranscription(transcriptionResult);
+      setIsTranscriptionDone(true); // Marquer la transcription comme terminée
+      setProgress(66); // Mettre à jour la progression
+      
+      // 3. Analyse du contenu
+      const analysisResult = await analyzeContent(
+        transcriptionResult, 
+        uploadResult.videoMetadata
+      );
+      console.log("Analysis result:", JSON.stringify(analysisResult, null, 2));
+      
+      // S'assurer que l'analyse est correctement structurée
+      if (analysisResult && analysisResult.analysis) {
+        setAnalysis(analysisResult.analysis);
+        setIsAnalysisDone(true); // Marquer l'analyse comme terminée
+      } else {
+        console.error("Invalid analysis structure:", analysisResult);
+        throw new Error("The analysis structure is invalid");
       }
       
-      // Transcription de la vidéo (utiliser l'URL du serveur si disponible, sinon fichier local)
-      let transcriptionResult;
-      try {
-        const videoToTranscribe = serverVideoUrl || file;
-        console.log('Transcription de la vidéo en cours...', typeof videoToTranscribe);
-        
-        transcriptionResult = await transcribeVideo(videoToTranscribe, { responseFormat: 'verbose_json' });
-        console.log('Transcription réussie:', transcriptionResult);
-        setTranscription(transcriptionResult);
-        setProgress(70);
-      } catch (transcriptionError) {
-        console.error('Erreur lors de la transcription:', transcriptionError);
-        
-        // Si nous avons un message d'erreur spécifique concernant le format de fichier, l'afficher
-        if ((transcriptionError as Error).message.includes('Format de fichier non supporté')) {
-          setWarning('La transcription a échoué car le format du fichier n\'est pas pris en charge. L\'API OpenAI accepte uniquement les formats audio: flac, m4a, mp3, mp4, mpeg, mpga, oga, ogg, wav, webm.');
-        } else {
-          setWarning('La transcription a échoué, mais la vidéo reste disponible pour visionnage.');
-        }
-        
-        // Marquer le processus comme terminé mais avec un avertissement
-        setIsProcessing(false);
-        setIsAnalyzed(true);
-        setProgress(100);
-        return; // Sortir de la fonction, la vidéo est déjà affichée
-      }
-      
-      // Analyse du contenu si la transcription est disponible
-      if (transcriptionResult) {
-        try {
-          console.log('Analyse du contenu en cours...');
-          // On peut procéder à l'analyse si nous avons une transcription
-          const analysisResult = await analyzeContent(transcriptionResult);
-          
-          // Vérifier si la structure de l'analyse est valide
-          if (analysisResult && typeof analysisResult === 'object') {
-            setAnalysis(analysisResult);
-            console.log('Analyse terminée:', analysisResult);
-          } else {
-            console.error('Résultat d\'analyse invalide:', analysisResult);
-            setWarning('L\'analyse n\'a pas produit de résultats valides, mais la vidéo et la transcription sont disponibles.');
-          }
-        } catch (analysisError) {
-          console.error('Erreur lors de l\'analyse:', analysisError);
-          setWarning('L\'analyse a échoué, mais la vidéo et la transcription restent disponibles.');
-        }
-      }
-      
-      // Marquer le processus comme terminé
-      setIsProcessing(false);
-      setIsAnalyzed(true);
+      clearInterval(progressInterval);
       setProgress(100);
-      
-    } catch (error) {
-      console.error('Erreur lors du traitement du fichier:', error);
-      // En cas d'erreur générale, on réinitialise les états de progression
-      // mais on conserve la vidéo si elle a été définie
+      setIsAnalyzed(true);
+      setIsProcessing(false);
+    } catch (error: any) {
+      console.error('Error processing file:', error);
       setIsProcessing(false);
       setProgress(0);
-      setError(`Erreur lors du traitement du fichier: ${(error as Error).message}`);
+      setError(error.message || 'An error occurred while processing the file');
       
-      // Arrêter toute simulation de progression en cours
-      if (progressInterval.current) {
-        clearInterval(progressInterval.current);
-        progressInterval.current = null;
-      }
+      // Reset progress states in case of error
+      setIsVideoUploaded(false);
+      setIsTranscriptionDone(false);
+      setIsAnalysisDone(false);
+      
+      // Stop progress simulation
+      clearInterval(simulateProgress());
     }
   };
 
@@ -418,103 +361,6 @@ export const AnalyzerProvider: React.FC<{ children: ReactNode }> = ({ children }
     setIsAnalysisDone(false);
   };
 
-  // Handlers pour le téléchargement de fichiers et soumission d'URL
-  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const files = event.target.files;
-    if (files && files.length > 0) {
-      const file = files[0];
-      setUploadedFile(file);
-      processUploadedFile(file);
-    }
-  };
-
-  const handleInstagramUrlSubmit = (url: string) => {
-    setVideoSource('instagram');
-    processVideoUrl(url);
-  };
-
-  const handleYoutubeUrlSubmit = (url: string) => {
-    setVideoSource('youtube');
-    processVideoUrl(url);
-  };
-
-  const handleTikTokUrlSubmit = (url: string) => {
-    setVideoSource('tiktok');
-    processVideoUrl(url);
-  };
-
-  const handleDropFile = (files: FileList) => {
-    if (files && files.length > 0) {
-      const file = files[0];
-      setUploadedFile(file);
-      processUploadedFile(file);
-    }
-  };
-
-  const handleTranslate = async () => {
-    if (!transcription) {
-      setError('Aucune transcription disponible à traduire');
-      return;
-    }
-    
-    try {
-      setError(null);
-      setIsTranslating(true);
-      
-      // Ici, vous pouvez appeler votre fonction de traduction
-      // par exemple: await translateText(transcription.text, targetLanguage);
-      
-      // Pour l'instant, ajoutons un message d'information
-      setWarning('La fonctionnalité de traduction est en cours de développement');
-    } catch (error) {
-      console.error('Erreur de traduction:', error);
-      setError(`Erreur lors de la traduction: ${(error as Error).message}`);
-    } finally {
-      setIsTranslating(false);
-    }
-  };
-
-  const exportAnalysis = () => {
-    if (!transcription || !analysis) {
-      setError('Aucune analyse disponible à exporter');
-      return;
-    }
-    
-    try {
-      // Créer un objet contenant les données à exporter
-      const exportData = {
-        metadata: videoMetadata,
-        transcription: transcription,
-        analysis: analysis
-      };
-      
-      // Convertir en JSON
-      const jsonStr = JSON.stringify(exportData, null, 2);
-      
-      // Créer un Blob
-      const blob = new Blob([jsonStr], { type: 'application/json' });
-      
-      // Créer une URL pour le téléchargement
-      const url = URL.createObjectURL(blob);
-      
-      // Créer un lien de téléchargement
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'video-analysis.json';
-      
-      // Simuler un clic
-      document.body.appendChild(a);
-      a.click();
-      
-      // Nettoyer
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-    } catch (error) {
-      console.error('Erreur lors de l\'export:', error);
-      setError(`Erreur lors de l'export: ${(error as Error).message}`);
-    }
-  };
-
   // Valeur du contexte
   const value: AnalyzerContextType = {
     videoUrl,
@@ -526,18 +372,77 @@ export const AnalyzerProvider: React.FC<{ children: ReactNode }> = ({ children }
     videoMetadata,
     transcription,
     analysis,
+    exportUrl,
     error,
-    warning,
     isTranslating,
-    reset: resetState,
+    
+    // Nouveaux états pour le chargement progressif
+    isVideoUploaded,
+    isTranscriptionDone,
+    isAnalysisDone,
+    
+    setVideoUrl,
     setVideoSource,
-    handleFileUpload,
-    handleInstagramUrlSubmit,
-    handleYoutubeUrlSubmit,
-    handleTikTokUrlSubmit,
-    handleDropFile,
-    handleTranslate,
-    exportAnalysis,
+    setUploadedFile,
+    processVideoUrl,
+    processUploadedFile,
+    generateExport,
+    translateTranscription: async (targetLanguage: LanguageCode) => {
+      if (!transcription) {
+        throw new Error('No transcription to translate');
+      }
+      
+      try {
+        setError(null);
+        setIsTranslating(true);
+        console.log(`Request translation to ${targetLanguage} for text:`, transcription.text.substring(0, 50) + '...');
+        console.log(`Initial transcription state:`, JSON.stringify({
+          hasText: !!transcription.text,
+          language: transcription.language,
+          hasTranslations: !!transcription.translations,
+          availableTranslations: transcription.translations ? Object.keys(transcription.translations) : []
+        }, null, 2));
+        
+        const response = await translateText(transcription.text, targetLanguage);
+        
+        // Extract translated text from response
+        const translatedText = response.translatedText;
+        console.log(`Received translated text (${targetLanguage}):`, translatedText.substring(0, 50) + '...');
+        
+        // Create a new translations object
+        const updatedTranslations = {
+          ...(transcription.translations || {}),
+          [targetLanguage]: translatedText
+        };
+        
+        // Create a new transcription object with updated translations
+        const updatedTranscription = {
+          ...transcription,
+          translations: updatedTranslations
+        };
+        
+        console.log(`Updated transcription state:`, JSON.stringify({
+          hasText: !!updatedTranscription.text,
+          language: updatedTranscription.language,
+          hasTranslations: !!updatedTranscription.translations,
+          availableTranslations: updatedTranscription.translations ? Object.keys(updatedTranscription.translations) : []
+        }, null, 2));
+        
+        // Update state with new object
+        setTranscription(updatedTranscription);
+        console.log(`Transcription updated with translation in ${targetLanguage}`);
+        
+        // Return translated text for immediate use
+        return translatedText;
+      } catch (error: any) {
+        console.error('Translation error:', error);
+        setError(error.message || 'An error occurred while translating');
+        throw error;
+      } finally {
+        setIsTranslating(false);
+      }
+    },
+    resetState,
   };
 
   return (
