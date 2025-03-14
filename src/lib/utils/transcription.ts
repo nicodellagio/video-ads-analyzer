@@ -96,15 +96,41 @@ async function createReadStreamFromPath(path: string): Promise<File | Buffer> {
     // Environnement local - utiliser le système de fichiers
     try {
       const fs = await import('fs');
+      const path_module = await import('path');
       
       // Récupérer le contenu du fichier
       const buffer = fs.readFileSync(path);
       console.log(`Fichier local lu: ${path}, taille=${buffer.length} octets`);
       
-      // En environnement local, adapter le type de fichier pour OpenAI
-      // OpenAI vérifie les types de fichiers côté serveur mais pas pour node.js
-      // Pour les fichiers locaux, on renvoie directement le buffer
-      return buffer;
+      // Extraire le nom du fichier à partir du chemin
+      const fileName = path_module.basename(path);
+      
+      // Déterminer le type MIME en fonction de l'extension
+      let mimeType = 'audio/mp4';
+      
+      if (fileName.toLowerCase().endsWith('.mp3')) {
+        mimeType = 'audio/mpeg';
+      } else if (fileName.toLowerCase().endsWith('.wav')) {
+        mimeType = 'audio/wav'; 
+      } else if (fileName.toLowerCase().endsWith('.ogg')) {
+        mimeType = 'audio/ogg';
+      } else if (fileName.toLowerCase().endsWith('.flac')) {
+        mimeType = 'audio/flac';
+      } else if (fileName.toLowerCase().endsWith('.m4a')) {
+        mimeType = 'audio/m4a';
+      } else if (fileName.toLowerCase().endsWith('.webm')) {
+        mimeType = 'audio/webm';
+      }
+      
+      // En environnement Node.js, nous devons créer un Blob à partir du buffer
+      // puis créer un File à partir du Blob pour la compatibilité avec l'API OpenAI
+      console.log(`Préparation du fichier local avec le type MIME: ${mimeType}, nom: ${fileName}`);
+      
+      // L'API OpenAI en Node.js accepte également les ReadStream, essayons cette approche
+      const readStream = fs.createReadStream(path);
+      console.log('Création d\'un ReadStream pour le fichier local');
+      
+      return readStream as any;
     } catch (error) {
       console.error('Error reading local file:', error);
       throw new Error(`Error reading local file: ${(error as Error).message}`);
@@ -138,8 +164,18 @@ export async function transcribeVideo(
 
   try {
     // Initialiser le client OpenAI avec la clé API
+    const apiKey = process.env.OPENAI_API_KEY;
+    
+    // Vérifier que la clé API est bien définie
+    if (!apiKey) {
+      throw new Error('La clé API OpenAI n\'est pas définie dans les variables d\'environnement');
+    }
+    
+    // Log pour vérifier que la clé est bien chargée (pas en entier pour des raisons de sécurité)
+    console.log(`Clé API OpenAI disponible, commence par ${apiKey.substring(0, 7)}...`);
+    
     const openai = new OpenAI({
-      apiKey: process.env.OPENAI_API_KEY,
+      apiKey,
     });
 
     console.log(`Transcription de la vidéo: ${videoPath}`);
@@ -164,34 +200,47 @@ export async function transcribeVideo(
 
     // Appeler l'API OpenAI pour la transcription
     console.log('Envoi de la demande de transcription à OpenAI...');
-    const response = await openai.audio.transcriptions.create(transcriptionOptions);
-    console.log('Transcription terminée');
-
-    // Traiter la réponse en fonction du format
-    if (transcriptionOptions.response_format === 'verbose_json') {
-      // Extraire les informations détaillées
-      const result = response as any;
-      return {
-        text: result.text,
-        language: result.language || 'auto',
-        confidence: result.segments?.reduce((acc: number, segment: any) => acc + segment.confidence, 0) / 
-                   (result.segments?.length || 1),
-        words: result.segments?.flatMap((segment: any) => 
-          segment.words?.map((word: any) => ({
-            text: word.word,
-            start: word.start,
-            end: word.end
-          })) || []
-        ) || []
-      };
-    } else {
-      // Format simple pour les autres formats de réponse
-      return {
-        text: typeof response === 'string' ? response : (response as any).text,
-        language: 'auto', // Impossible de déterminer la langue pour les formats non-verbose_json, utiliser 'auto'
-        confidence: 0.8, // Valeur par défaut
-        words: []
-      };
+    console.log(`Options de transcription: model=${transcriptionOptions.model}, format=${transcriptionOptions.response_format}`);
+    try {
+      const response = await openai.audio.transcriptions.create(transcriptionOptions);
+      console.log('Transcription terminée avec succès');
+      
+      // Traiter la réponse en fonction du format
+      if (transcriptionOptions.response_format === 'verbose_json') {
+        // Extraire les informations détaillées
+        const result = response as any;
+        return {
+          text: result.text,
+          language: result.language || 'auto',
+          confidence: result.segments?.reduce((acc: number, segment: any) => acc + segment.confidence, 0) / 
+                     (result.segments?.length || 1),
+          words: result.segments?.flatMap((segment: any) => 
+            segment.words?.map((word: any) => ({
+              text: word.word,
+              start: word.start,
+              end: word.end
+            })) || []
+          ) || []
+        };
+      } else {
+        // Format simple pour les autres formats de réponse
+        return {
+          text: typeof response === 'string' ? response : (response as any).text,
+          language: 'auto', // Impossible de déterminer la langue pour les formats non-verbose_json, utiliser 'auto'
+          confidence: 0.8, // Valeur par défaut
+          words: []
+        };
+      }
+    } catch (apiError) {
+      console.error('Erreur lors de l\'appel à l\'API OpenAI:', apiError);
+      
+      // Vérifier si l'erreur est liée à l'authentification
+      const errorMessage = (apiError as Error).message || '';
+      if (errorMessage.includes('auth') || errorMessage.includes('key') || errorMessage.includes('token')) {
+        console.error('Problème d\'authentification avec l\'API OpenAI. Vérifiez votre clé API.');
+      }
+      
+      throw apiError;
     }
   } catch (error) {
     console.error('Error during transcription:', error);
