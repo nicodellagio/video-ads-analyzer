@@ -73,7 +73,7 @@ async function getAdDetails(adId: string) {
       rawCreativeData: creativeData
     };
   } catch (error) {
-    console.error('Erreur lors de la récupération des détails de l'annonce:', error);
+    console.error("Erreur lors de la récupération des détails de l'annonce:", error);
     throw error;
   }
 }
@@ -121,7 +121,7 @@ export async function POST(request: NextRequest) {
     });
 
   } catch (error) {
-    console.error('Erreur lors de l\'extraction:', error);
+    console.error("Erreur lors de l'extraction:", error);
     return NextResponse.json(
       { error: `Erreur lors de l'extraction: ${(error as Error).message}` },
       { status: 500 }
