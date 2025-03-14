@@ -487,10 +487,17 @@ export default function VideoAdAnalysis() {
         setCurrentTime(videoRef.current?.currentTime || 0);
       };
       
+      const handleVideoLoaded = () => {
+        console.log('Vidéo chargée et prête à être lue');
+        setDuration(videoRef.current?.duration || 0);
+      };
+      
       videoRef.current.addEventListener('timeupdate', updateTime);
+      videoRef.current.addEventListener('loadeddata', handleVideoLoaded);
       
       return () => {
         videoRef.current?.removeEventListener('timeupdate', updateTime);
+        videoRef.current?.removeEventListener('loadeddata', handleVideoLoaded);
       };
     }
   }, []);

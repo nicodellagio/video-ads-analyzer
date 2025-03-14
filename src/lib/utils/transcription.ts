@@ -163,21 +163,11 @@ export async function transcribeVideo(
   }
 
   try {
-    // Initialiser le client OpenAI avec la clé API
-    const apiKey = process.env.OPENAI_API_KEY;
+    // Importer dynamiquement notre utilitaire OpenAI (pour éviter les problèmes en SSR)
+    const { getOpenAIInstance } = await import('./openai');
     
-    // Vérifier que la clé API est bien définie
-    if (!apiKey) {
-      throw new Error('La clé API OpenAI n\'est pas définie dans les variables d\'environnement');
-    }
-    
-    // Log pour vérifier que la clé est bien chargée (pas en entier pour des raisons de sécurité)
-    console.log(`Clé API OpenAI disponible, commence par ${apiKey.substring(0, 7)}...`);
-    
-    const openai = new OpenAI({
-      apiKey,
-    });
-
+    // Obtenir l'instance OpenAI
+    const openai = getOpenAIInstance();
     console.log(`Transcription de la vidéo: ${videoPath}`);
 
     // Récupérer le fichier à envoyer à l'API
@@ -201,6 +191,7 @@ export async function transcribeVideo(
     // Appeler l'API OpenAI pour la transcription
     console.log('Envoi de la demande de transcription à OpenAI...');
     console.log(`Options de transcription: model=${transcriptionOptions.model}, format=${transcriptionOptions.response_format}`);
+    
     try {
       const response = await openai.audio.transcriptions.create(transcriptionOptions);
       console.log('Transcription terminée avec succès');
@@ -238,6 +229,9 @@ export async function transcribeVideo(
       const errorMessage = (apiError as Error).message || '';
       if (errorMessage.includes('auth') || errorMessage.includes('key') || errorMessage.includes('token')) {
         console.error('Problème d\'authentification avec l\'API OpenAI. Vérifiez votre clé API.');
+      } else if (errorMessage.includes('format') || errorMessage.includes('file')) {
+        console.error('Problème avec le format du fichier:', errorMessage);
+        throw new Error(`Format de fichier non supporté: ${errorMessage}`);
       }
       
       throw apiError;
