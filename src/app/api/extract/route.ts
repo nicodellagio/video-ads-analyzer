@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { validateUrl, extractFacebookVideo, extractInstagramVideo } from '@/lib/utils/extractor';
+import { validateUrl } from '@/lib/utils/extractor';
 import type { VideoSource } from '@/lib/utils/extractor';
-import { USE_LOCAL_STORAGE, USE_S3_STORAGE } from '@/lib/utils/constants';
+import { USE_S3_STORAGE } from '@/lib/utils/constants';
 import { v4 as uuidv4 } from 'uuid';
+import { extractVideoFromUrl } from '@/lib/services/apify-extraction';
+import { saveVideoFile } from '@/lib/utils/video';
 
 export const maxDuration = 60; // 1 minute maximum for processing (Vercel hobby plan limit)
 export const dynamic = 'force-dynamic'; // Force dynamic mode to avoid caching
@@ -37,25 +39,65 @@ export async function POST(request: NextRequest) {
         error: 'AWS S3 is not configured. Please set AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, and AWS_S3_BUCKET_NAME environment variables.'
       }, { status: 500 });
     }
+    
+    // Vérifier si le token API Apify est configuré
+    if (!process.env.APIFY_API_TOKEN) {
+      return NextResponse.json({
+        error: 'APIFY_API_TOKEN is not configured in environment variables'
+      }, { status: 500 });
+    }
 
-    // Extract video based on source
+    // Extract video using Apify service
     try {
-      let videoMetadata;
+      console.log(`Extraction de la vidéo depuis ${source} en utilisant Apify...`);
       
-      if (source === 'meta') {
-        console.log('Attempting extraction for Facebook...');
-        videoMetadata = await extractFacebookVideo(url);
-      } else if (source === 'instagram') {
-        console.log('Attempting extraction for Instagram...');
-        videoMetadata = await extractInstagramVideo(url);
-      } else {
-        return NextResponse.json(
-          { error: `Extraction for source ${source} is not yet implemented` },
-          { status: 501 }
-        );
+      // Utiliser le service Apify pour extraire la vidéo
+      const extractedVideo = await extractVideoFromUrl(url);
+      console.log('Vidéo extraite avec succès:', extractedVideo.videoUrl);
+      
+      // Télécharger la vidéo depuis l'URL extraite
+      console.log('Téléchargement de la vidéo...');
+      const videoResponse = await fetch(extractedVideo.videoUrl);
+      
+      if (!videoResponse.ok) {
+        throw new Error(`Erreur lors du téléchargement de la vidéo: ${videoResponse.status} ${videoResponse.statusText}`);
       }
       
-      console.log('Extraction successful:', videoMetadata);
+      // Convertir la réponse en blob
+      const videoBlob = await videoResponse.blob();
+      
+      // Générer un identifiant unique et un nom de fichier
+      const fileId = uuidv4();
+      const fileExtension = 'mp4'; // Forcer l'extension mp4 pour la compatibilité
+      const fileName = `${fileId}.${fileExtension}`;
+      
+      // Convertir le blob en File
+      const videoFile = new File([videoBlob], fileName, { 
+        type: 'video/mp4' // Forcer le type MIME pour la compatibilité
+      });
+      
+      // Sauvegarder le fichier (localement ou sur S3 selon l'environnement)
+      console.log('Sauvegarde du fichier vidéo...');
+      const { filePath, s3Key, url: fileUrl } = await saveVideoFile(videoFile, fileName);
+      
+      // Construire les métadonnées de la vidéo
+      const videoMetadata = {
+        id: fileId,
+        url: fileUrl || `/uploads/${fileName}`,
+        s3Key,
+        format: `${extractedVideo.metadata?.width || 'unknown'}x${extractedVideo.metadata?.height || 'unknown'}`,
+        size: `${(videoBlob.size / (1024 * 1024)).toFixed(1)} MB`,
+        duration: extractedVideo.duration || '00:00:30', // Durée par défaut si non disponible
+        originalName: fileName,
+        title: extractedVideo.title,
+        description: extractedVideo.description,
+        thumbnailUrl: extractedVideo.thumbnailUrl,
+        source: extractedVideo.source,
+        originalUrl: extractedVideo.originalUrl,
+        metadata: extractedVideo.metadata
+      };
+      
+      console.log('Extraction complète:', videoMetadata);
       return NextResponse.json({ success: true, video: videoMetadata });
     } catch (error) {
       console.error('Extraction failed:', error);
