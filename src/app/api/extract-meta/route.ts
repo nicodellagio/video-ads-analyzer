@@ -1,132 +1,155 @@
 import { NextRequest, NextResponse } from 'next/server';
-import bizSdk from 'facebook-nodejs-business-sdk';
+import { validateUrl } from '@/lib/utils/extractor';
+import type { VideoSource } from '@/lib/utils/extractor';
+import * as bizSdk from 'facebook-nodejs-business-sdk';
+import { v4 as uuidv4 } from 'uuid';
 
-// Extraction des classes nécessaires du SDK
-const {Ad, AdCreative} = bizSdk;
-const BusinessAdsAPI = bizSdk.FacebookAdsApi;
+// Importation correcte des classes depuis le SDK
+const { Ad } = bizSdk;
 
-// Configuration des identifiants Meta
-const APP_ID = process.env.META_APP_ID;
-const APP_SECRET = process.env.META_APP_SECRET;
-const ACCESS_TOKEN = process.env.META_ACCESS_TOKEN;
+export const maxDuration = 60; // 1 minute maximum for processing (Vercel hobby plan limit)
+export const dynamic = 'force-dynamic'; // Force dynamic mode to avoid caching
 
-// Formats d'URL supportés
-const FB_AD_LIBRARY_REGEX = /facebook\.com\/ads\/library\/\?id=(\d+)/;
-const FB_POST_REGEX = /facebook\.com\/(.*?)\/posts\/(\d+)/;
-const IG_POST_REGEX = /instagram\.com\/p\/([A-Za-z0-9_-]+)/;
-
-/**
- * Extrait l'ID d'une publicité à partir d'une URL
- */
-function extractAdId(url: string): string | null {
-  // Format bibliothèque d'annonces
-  const adLibraryMatch = url.match(FB_AD_LIBRARY_REGEX);
-  if (adLibraryMatch) return adLibraryMatch[1];
-  
-  // Autres formats à implémenter selon vos besoins
-  return null;
-}
-
-/**
- * Récupère les détails d'une annonce, y compris ses ressources créatives
- */
-async function getAdDetails(adId: string) {
-  try {
-    if (!APP_ID || !APP_SECRET || !ACCESS_TOKEN) {
-      throw new Error('Identifiants Meta non configurés');
-    }
-
-    // Initialiser l'API avec les identifiants
-    const api = BusinessAdsAPI.init(APP_ID, APP_SECRET, ACCESS_TOKEN);
-
-    // Récupérer l'annonce
-    const ad = new Ad(adId);
-    const adData = await ad.get(['creative', 'adset', 'campaign']);
-
-    // Récupérer le contenu créatif
-    const creativeId = adData.creative.id;
-    const creative = new AdCreative(creativeId);
-    const creativeData = await creative.get([
-      'video_id',
-      'image_url',
-      'thumbnail_url',
-      'asset_feed_spec',
-      'object_story_spec'
-    ]);
-
-    // Extraire l'URL de la vidéo si disponible
-    let videoUrl = null;
-    if (creativeData.video_id) {
-      // Construire l'URL de la vidéo à partir de l'ID de vidéo
-      videoUrl = `https://business.facebook.com/business_locations/download_video?video_id=${creativeData.video_id}`;
-      
-      // Ou utiliser l'API vidéo pour obtenir les liens de streaming
-      // Cette partie nécessiterait des appels supplémentaires à l'API
-    }
-
-    return {
-      adId,
-      campaign: adData.campaign?.name,
-      adset: adData.adset?.name,
-      creativeId,
-      videoId: creativeData.video_id,
-      videoUrl,
-      imageUrl: creativeData.image_url,
-      thumbnailUrl: creativeData.thumbnail_url,
-      rawCreativeData: creativeData
-    };
-  } catch (error) {
-    console.error("Erreur lors de la récupération des détails de l'annonce:", error);
-    throw error;
-  }
-}
-
-/**
- * Point d'entrée de l'API
- */
 export async function POST(request: NextRequest) {
   try {
-    const { url } = await request.json();
+    // Retrieve request data
+    const data = await request.json();
+    const { url, source } = data;
 
-    if (!url) {
+    console.log('Meta extraction requested for:', { url, source });
+
+    // Verify required parameters are present
+    if (!url || !source) {
       return NextResponse.json(
-        { error: 'URL non fournie' },
+        { error: 'URL and source are required' },
         { status: 400 }
       );
     }
 
-    console.log(`Extraction de contenu pour l'URL: ${url}`);
-
-    // Extraire l'ID de l'annonce à partir de l'URL
-    const adId = extractAdId(url);
-    if (!adId) {
+    // Validate URL based on source
+    if (!validateUrl(url, source as VideoSource)) {
       return NextResponse.json(
-        { error: 'Format d\'URL non supporté ou ID d\'annonce non trouvé' },
+        { error: `Invalid URL for source ${source}` },
         { status: 400 }
       );
     }
 
-    // Récupérer les détails de l'annonce
-    const adDetails = await getAdDetails(adId);
-
-    // Vérifier si une vidéo a été trouvée
-    if (!adDetails.videoUrl) {
-      return NextResponse.json(
-        { error: 'Aucune vidéo trouvée dans cette annonce' },
-        { status: 404 }
-      );
+    // Vérifier si les identifiants Meta API sont configurés
+    if (!process.env.META_ACCESS_TOKEN || !process.env.META_APP_ID || !process.env.META_APP_SECRET) {
+      return NextResponse.json({
+        error: 'META API is not configured. Please set META_ACCESS_TOKEN, META_APP_ID, and META_APP_SECRET environment variables.'
+      }, { status: 500 });
     }
 
-    return NextResponse.json({
-      success: true,
-      adDetails,
-      videoUrl: adDetails.videoUrl
-    });
+    // Configurer l'API Meta
+    bizSdk.FacebookAdsApi.init(process.env.META_ACCESS_TOKEN);
 
+    // Extraction avec SDK Meta
+    try {
+      console.log(`Extraction depuis ${source} en utilisant Meta API...`);
+      
+      let adId = '';
+      
+      // Extraire l'ID de l'annonce depuis l'URL
+      if (url.includes('ads/library')) {
+        const urlParams = new URL(url).searchParams;
+        adId = urlParams.get('id') || '';
+        
+        if (!adId) {
+          throw new Error('ID d\'annonce non trouvé dans l\'URL');
+        }
+      } else {
+        throw new Error('URL non supportée pour l\'extraction Meta');
+      }
+      
+      console.log(`ID d'annonce trouvé: ${adId}`);
+      
+      // Récupérer les détails de l'annonce
+      const ad = await Ad(adId).get([
+        'id',
+        'name',
+        'creative',
+        'adset_id',
+        'campaign_id',
+        'status',
+        'created_time',
+        'updated_time'
+      ]);
+      
+      // Récupérer les créatifs
+      const creative = await ad.creative.get([
+        'id',
+        'name',
+        'title',
+        'body',
+        'image_url',
+        'video_id',
+        'thumbnail_url',
+        'asset_feed_spec'
+      ]);
+      
+      let videoUrl = '';
+      let thumbnailUrl = '';
+      
+      if (creative.video_id) {
+        // Récupérer l'URL de la vidéo
+        const video = await bizSdk.Video(creative.video_id).get([
+          'id',
+          'source',
+          'picture',
+          'title',
+          'description',
+          'length'
+        ]);
+        
+        videoUrl = video.source || '';
+        thumbnailUrl = video.picture || creative.thumbnail_url || '';
+      }
+      
+      if (!videoUrl) {
+        throw new Error('Aucune vidéo trouvée dans cette annonce');
+      }
+      
+      // Générer un identifiant unique
+      const fileId = uuidv4();
+      
+      // Construction des métadonnées
+      const videoMetadata = {
+        id: fileId,
+        url: videoUrl,
+        thumbnailUrl: thumbnailUrl,
+        title: creative.title || ad.name || 'Annonce Facebook',
+        description: creative.body || '',
+        duration: '00:00:30', // Durée par défaut
+        originalName: `ad_${adId}.mp4`,
+        source: 'facebook',
+        originalUrl: url,
+        metadata: {
+          adId: ad.id,
+          adName: ad.name,
+          adsetId: ad.adset_id,
+          campaignId: ad.campaign_id,
+          status: ad.status,
+          createdTime: ad.created_time,
+          updatedTime: ad.updated_time,
+          creativeId: creative.id,
+          creativeName: creative.name
+        }
+      };
+      
+      console.log('Extraction Meta complète:', videoMetadata);
+      return NextResponse.json({ success: true, video: videoMetadata });
+    } catch (error) {
+      console.error('Extraction Meta failed:', error);
+      return NextResponse.json(
+        { error: `Unable to extract from Meta: ${(error as Error).message}` },
+        { status: 500 }
+      );
+    }
   } catch (error) {
-    console.error("Erreur lors de l'extraction:", error);
+    console.error('Error processing request:', error);
     return NextResponse.json(
-      { error: `Erreur lors de l'extraction: ${(error as Error).message}` },
+      { error: `Error processing request: ${(error as Error).message}` },
       { status: 500 }
     );
   }
