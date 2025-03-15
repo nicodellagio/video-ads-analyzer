@@ -60,6 +60,28 @@ export async function POST(request: NextRequest) {
       
       // Vérifier si c'est une annonce avec uniquement des images
       const containsOnlyImages = extractedVideo.metadata?.containsOnlyImages === true;
+      const noMediaFound = extractedVideo.metadata?.noMediaFound === true;
+      
+      if (noMediaFound) {
+        console.log('Aucun média trouvé dans l\'annonce');
+        
+        // Construire une réponse spéciale pour les annonces sans média
+        return NextResponse.json({ 
+          success: true, 
+          noMediaFound: true,
+          adInfo: {
+            title: extractedVideo.title || 'Annonce Facebook',
+            description: extractedVideo.description || '',
+            source: extractedVideo.source,
+            originalUrl: extractedVideo.originalUrl,
+            metadata: {
+              ...extractedVideo.metadata,
+              extractionMethod: 'apify',
+              extractionTime: new Date().toISOString()
+            }
+          }
+        });
+      }
       
       if (containsOnlyImages) {
         console.log('Annonce contenant uniquement des images extraite avec succès');

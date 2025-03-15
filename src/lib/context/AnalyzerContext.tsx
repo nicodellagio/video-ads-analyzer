@@ -195,6 +195,19 @@ export const AnalyzerProvider: React.FC<{ children: ReactNode }> = ({ children }
         return;
       }
       
+      // Vérifier si le résultat indique qu'aucun média n'a été trouvé
+      if (extractionResult.noMediaFound && extractionResult.adInfo) {
+        clearInterval(progressInterval);
+        setIsProcessing(false);
+        setProgress(0);
+        
+        // Afficher une erreur conviviale qui explique clairement la situation
+        const adTitle = extractionResult.adInfo.title || 'Cette annonce';
+        setError(`${adTitle} ne contient aucun média (ni vidéo, ni image). Veuillez sélectionner une autre annonce à analyser.`);
+        
+        return;
+      }
+      
       // Vérifier la structure de la réponse et extraire les métadonnées vidéo
       let videoData;
       if (extractionResult.videoMetadata) {

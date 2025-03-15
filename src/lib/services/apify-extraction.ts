@@ -253,7 +253,26 @@ async function extractFacebookAdVideo(url: string): Promise<ExtractedVideo> {
           }
         };
       } else {
-        throw new Error('Aucune vidéo ni image trouvée dans cette annonce Facebook.');
+        // Au lieu de lever une erreur, retourner un objet structuré indiquant qu'aucun média n'a été trouvé
+        console.log('Aucune vidéo ni image trouvée dans cette annonce Facebook. Renvoi d\'une réponse structurée.');
+        return {
+          videoUrl: '', // Pas de vidéo
+          thumbnailUrl: '',
+          title: adData.pageName || 'Annonce Facebook',
+          description: adData.snapshot?.body?.text || '',
+          publishedAt: adData.startDateFormatted || new Date().toISOString(),
+          source: 'facebook',
+          originalUrl: url,
+          metadata: {
+            adId: adData.adArchiveID || adData.adArchiveId,
+            pageName: adData.pageName,
+            pageId: adData.pageId,
+            categories: adData.categories,
+            containsOnlyImages: false,
+            noMediaFound: true, // Nouvel indicateur pour signaler qu'aucun média n'a été trouvé
+            adData
+          }
+        };
       }
     }
     

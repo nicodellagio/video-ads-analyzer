@@ -122,6 +122,12 @@ export async function extractVideoFromUrl(url: string, source: 'instagram' | 'me
       return data;
     }
     
+    // Si la réponse indique qu'aucun média n'a été trouvé, renvoyer l'objet pour gestion par l'analyseur
+    if (data.noMediaFound === true) {
+      console.log('Annonce sans média détectée:', data.adInfo.title);
+      return data;
+    }
+    
     return data;
   } catch (error) {
     console.error('Video extraction error:', error);
