@@ -194,8 +194,9 @@ async function extractFacebookAdVideo(url: string): Promise<ExtractedVideo> {
     if (adData.snapshot && adData.snapshot.videos && adData.snapshot.videos.length > 0) {
       // Extraction directe des vidéos disponibles
       const video = adData.snapshot.videos[0];
-      videoUrl = video.videoHdUrl || video.videoSdUrl || '';
-      thumbnailUrl = video.videoPreviewImageUrl || '';
+      // Vérifier les deux formats de nommage (camelCase et underscores)
+      videoUrl = video.videoHdUrl || video.video_hd_url || video.videoSdUrl || video.video_sd_url || '';
+      thumbnailUrl = video.videoPreviewImageUrl || video.video_preview_image_url || '';
       console.log('Vidéo trouvée dans snapshot.videos:', videoUrl);
     } 
     // Vérifier les cartes qui contiennent souvent des vidéos
