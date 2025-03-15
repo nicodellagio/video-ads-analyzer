@@ -27,6 +27,145 @@ export interface ExtractedVideo {
   metadata?: any;
 }
 
+// Configurations de proxy pour la rotation
+const PROXY_CONFIGURATIONS = [
+  // Configuration France
+  {
+    useApifyProxy: true,
+    apifyProxyGroups: ['RESIDENTIAL'],
+    countryCode: 'FR'
+  },
+  // Configuration États-Unis
+  {
+    useApifyProxy: true,
+    apifyProxyGroups: ['RESIDENTIAL'],
+    countryCode: 'US'
+  },
+  // Configuration Allemagne
+  {
+    useApifyProxy: true,
+    apifyProxyGroups: ['RESIDENTIAL'],
+    countryCode: 'DE'
+  },
+  // Configuration Royaume-Uni
+  {
+    useApifyProxy: true,
+    apifyProxyGroups: ['RESIDENTIAL'],
+    countryCode: 'GB'
+  },
+  // Configuration Datacenter (plus rapide mais moins fiable pour Instagram)
+  {
+    useApifyProxy: true,
+    apifyProxyGroups: ['DATACENTER'],
+  },
+  // Configuration pour plusieurs pays européens avec sessions persistantes
+  {
+    useApifyProxy: true,
+    apifyProxyGroups: ['RESIDENTIAL'],
+    countryCode: 'FR,DE,IT,ES,NL',
+    apifyProxySessionId: `instagram_session_${Date.now()}`
+  },
+  // NOUVELLE CONFIG: Canada avec session persistante (généralement moins suspecté)
+  {
+    useApifyProxy: true,
+    apifyProxyGroups: ['RESIDENTIAL'],
+    countryCode: 'CA',
+    apifyProxySessionId: `instagram_ca_session_${Date.now()}`
+  },
+  // NOUVELLE CONFIG: Asie (Japon, Corée) peut contourner certaines restrictions
+  {
+    useApifyProxy: true,
+    apifyProxyGroups: ['RESIDENTIAL'],
+    countryCode: 'JP,KR',
+    apifyProxySessionId: `instagram_asia_session_${Date.now()}`
+  },
+  // NOUVELLE CONFIG: Configuration avec Groupe SMART pour adaptation automatique
+  {
+    useApifyProxy: true,
+    apifyProxyGroups: ['SMART_PROXY'],
+  }
+];
+
+// Statistiques de succès pour chaque configuration de proxy
+interface ProxyStats {
+  attempts: number;
+  successes: number;
+  failures: number;
+  lastUsed: number; // Timestamp
+  successRate: number;
+}
+
+// Initialisation des statistiques pour chaque configuration
+const proxyStats: ProxyStats[] = PROXY_CONFIGURATIONS.map(() => ({
+  attempts: 0,
+  successes: 0,
+  failures: 0,
+  lastUsed: 0,
+  successRate: 0
+}));
+
+/**
+ * Choisit la meilleure configuration de proxy en fonction des statistiques
+ * et assure une rotation pour éviter la détection
+ */
+function selectProxyConfiguration(): { proxy: any, index: number } {
+  // Calculer les taux de succès pour chaque configuration
+  proxyStats.forEach(stat => {
+    if (stat.attempts > 0) {
+      stat.successRate = stat.successes / stat.attempts;
+    }
+  });
+
+  // Trier par taux de succès (les meilleurs d'abord) et par date de dernière utilisation (les moins récents d'abord)
+  const sortedIndices = proxyStats
+    .map((stat, index) => ({ stat, index }))
+    .sort((a, b) => {
+      // Si le taux de succès diffère de plus de 0.1, privilégier le meilleur taux
+      if (Math.abs(a.stat.successRate - b.stat.successRate) > 0.1) {
+        return b.stat.successRate - a.stat.successRate;
+      }
+      
+      // À taux similaires, favoriser celui utilisé le moins récemment
+      return a.stat.lastUsed - b.stat.lastUsed;
+    })
+    .map(item => item.index);
+
+  // Stratégie améliorée - 30% du temps, choisir au hasard plutôt qu'optimiser 
+  // Cela permet d'explorer d'autres configurations et évite de surutiliser un proxy efficace
+  let selectedIndex: number;
+  
+  if (Math.random() < 0.3) {
+    // Sélection aléatoire parmi les proxys moins utilisés (dernier tiers du tableau)
+    const randomIndex = Math.floor(Math.random() * Math.max(3, Math.floor(PROXY_CONFIGURATIONS.length / 3)));
+    selectedIndex = sortedIndices[sortedIndices.length - 1 - randomIndex];
+    console.log(`Sélection aléatoire de proxy pour exploration: ${PROXY_CONFIGURATIONS[selectedIndex]?.countryCode || 'DATACENTER/SMART'}`);
+  } else {
+    // Sélection optimisée basée sur les performances passées
+    selectedIndex = sortedIndices[0];
+    console.log(`Sélection optimisée de proxy: ${PROXY_CONFIGURATIONS[selectedIndex]?.countryCode || 'DATACENTER/SMART'} (Taux: ${(proxyStats[selectedIndex].successRate * 100).toFixed(1)}%)`);
+  }
+
+  // Mettre à jour les statistiques d'utilisation
+  proxyStats[selectedIndex].attempts++;
+  proxyStats[selectedIndex].lastUsed = Date.now();
+  
+  return {
+    proxy: PROXY_CONFIGURATIONS[selectedIndex],
+    index: selectedIndex
+  };
+}
+
+/**
+ * Met à jour les statistiques après une tentative d'extraction
+ */
+function updateProxyStats(index: number, success: boolean): void {
+  if (success) {
+    proxyStats[index].successes++;
+  } else {
+    proxyStats[index].failures++;
+  }
+}
+
 /**
  * Détecte le type d'URL (Facebook ou Instagram) et utilise l'acteur Apify approprié
  */
@@ -616,201 +755,35 @@ async function extractFacebookPostVideo(url: string): Promise<ExtractedVideo> {
 }
 
 /**
- * Extrait une vidéo d'Instagram
+ * Extrait une vidéo d'Instagram avec le système avancé de rotation d'IP
  */
 async function extractInstagramVideo(url: string): Promise<ExtractedVideo> {
-  console.log(`Extraction d'une vidéo depuis Instagram: ${url}`);
+  console.log(`Extraction d'une vidéo depuis Instagram avec rotation d'IP avancée: ${url}`);
 
   try {
-    // Déterminer l'acteur à utiliser (personnalisé ou par défaut)
-    const actorToUse = await getActor('instagram-post-extractor', 'apify/instagram-scraper')
-      .catch(() => 'apify/instagram-scraper');
-
-    console.log(`Utilisation de l'acteur: ${actorToUse} pour extraire des données d'Instagram`);
-
-    // Configuration avancée pour l'acteur Instagram
-    const runInput = {
-      directUrls: [url],
-      resultsType: 'posts',
-      addParentData: true,
-      maxRequestRetries: 15,  // Augmenter le nombre de tentatives
-      maxRequestsPerMinute: 2, // Limiter davantage pour éviter le blocage
-      maxConcurrency: 1, // Un seul thread à la fois
-      maxSessionRotations: 5, // Augmenter les rotations de sessions
-      loginCookies: [], // Par défaut, pas de cookies de connexion
-      proxy: {
-        useApifyProxy: true, 
-        apifyProxyGroups: ['RESIDENTIAL'], // Utiliser exclusivement des proxys résidentiels
-        countryCode: 'FR' // Utiliser des proxys français pour une meilleure chance
-      },
-      // Paramètres pour éviter les blocages par Instagram
-      forceEnglishLocale: true,
-      verboseLog: true,
-      debugLog: true,
-      timeout: 120000, // Timeout de 2 minutes pour chaque requête
-      // Ajouter des en-têtes HTTP réalistes
-      additionalHttpHeaders: {
-        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
-        'Accept-Language': 'fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
-        'Sec-Ch-Ua': '"Not A(Brand";v="99", "Google Chrome";v="121", "Chromium";v="121"',
-        'Sec-Ch-Ua-Mobile': '?0',
-        'Sec-Ch-Ua-Platform': '"macOS"'
-      }
-    };
-
-    // Exécuter l'acteur Apify pour Instagram Scraper avec un timeout plus long
-    console.log('Démarrage de l\'acteur Instagram avec les paramètres optimisés:', JSON.stringify(runInput, null, 2));
-    
-    // Utiliser un timeout plus long pour l'exécution complète
-    const run = await apifyClient.actor(actorToUse).call(runInput, { 
-      timeoutSecs: 180,  // 3 minutes de timeout pour l'exécution complète
-      waitSecs: 120      // Attendre jusqu'à 2 minutes pour les résultats
-    });
-
-    // Attendre un peu plus longtemps pour les résultats
-    console.log('Récupération des résultats de l\'acteur Instagram...');
-    const { items } = await apifyClient.dataset(run.defaultDatasetId).listItems();
-    
-    if (!items || items.length === 0) {
-      console.error('Aucune donnée extraite depuis Instagram');
-      throw new Error('Aucune donnée extraite depuis Instagram. Instagram limite peut-être les extractions. Veuillez réessayer plus tard ou utiliser une URL différente.');
-    }
-    
-    // Log détaillé pour le débogage
-    console.log(`Données extraites depuis Instagram: ${items.length} éléments trouvés`);
-    console.log('Premier élément trouvé (aperçu):', JSON.stringify(items[0]).slice(0, 500) + '...');
-    
-    const postData = items[0];
-    
-    // Recherche plus exhaustive pour trouver l'URL vidéo
-    let videoUrl = null;
-    
-    // 1. Vérifier les propriétés directes standard
-    if (postData.videoUrl || postData.video_url) {
-      videoUrl = postData.videoUrl || postData.video_url;
-      console.log('URL vidéo trouvée dans propriété directe:', videoUrl);
-    }
-    // 2. Vérifier dans les media video_versions (format API Instagram)
-    else if (postData.media && postData.media.video_versions && postData.media.video_versions.length > 0) {
-      // Prendre la version avec la meilleure résolution
-      videoUrl = postData.media.video_versions.sort((a, b) => b.width - a.width)[0].url;
-      console.log('URL vidéo trouvée dans media.video_versions:', videoUrl);
-    }
-    // 3. Vérifier dans l'array videos si disponible
-    else if (postData.videos && postData.videos.length > 0) {
-      const videoItem = postData.videos[0];
-      videoUrl = videoItem.url || videoItem.video_url;
-      console.log('URL vidéo trouvée dans videos array:', videoUrl);
-    }
-    // 4. Vérifier les médias carousel (Instagram reels/stories)
-    else if (postData.carousel_media || postData.carousel) {
-      const carouselMedia = postData.carousel_media || postData.carousel;
-      // Parcourir tous les médias du carousel à la recherche d'une vidéo
-      for (const media of carouselMedia) {
-        if (media.video_versions && media.video_versions.length > 0) {
-          videoUrl = media.video_versions.sort((a, b) => b.width - a.width)[0].url;
-          console.log('URL vidéo trouvée dans carousel_media:', videoUrl);
-          break;
-        }
-        if (media.videos && media.videos.length > 0) {
-          videoUrl = media.videos[0].url;
-          console.log('URL vidéo trouvée dans carousel_media.videos:', videoUrl);
-          break;
-        }
-      }
-    }
-    // 5. Recherche récursive en dernier recours
-    else {
-      console.log('Recherche récursive d\'URL vidéo dans les données Instagram...');
-      videoUrl = findVideoUrlRecursive(postData);
-      if (videoUrl) {
-        console.log('URL vidéo trouvée par recherche récursive:', videoUrl);
-      }
-    }
-    
-    // Si aucune URL vidéo n'a été trouvée, lever une erreur claire
-    if (!videoUrl) {
-      console.error('Aucune vidéo trouvée dans ce post Instagram');
-      throw new Error('Le post Instagram ne contient pas de vidéo ou Instagram limite l\'accès aux vidéos. Veuillez réessayer plus tard ou utiliser une URL différente.');
-    }
-    
-    console.log(`URL vidéo Instagram trouvée: ${videoUrl}`);
-    
-    // Vérifier que l'URL vidéo est valide
-    if (!videoUrl.startsWith('http')) {
-      throw new Error(`URL vidéo Instagram invalide: ${videoUrl}`);
-    }
-    
-    // Télécharger la vidéo depuis l'URL obtenue avec un timeout plus long et des en-têtes réalistes
-    console.log(`Téléchargement de la vidéo Instagram depuis: ${videoUrl}`);
-    const videoResponse = await fetch(videoUrl, { 
-      timeout: 60000, // 60 secondes de timeout pour le téléchargement
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
-        'Accept': 'video/mp4,video/*;q=0.9,*/*;q=0.8',
-        'Accept-Language': 'fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7',
-        'Referer': 'https://www.instagram.com/',
-        'Origin': 'https://www.instagram.com'
-      }
-    });
-    
-    if (!videoResponse.ok) {
-      throw new Error(`Erreur lors du téléchargement de la vidéo Instagram: ${videoResponse.status} ${videoResponse.statusText}`);
-    }
-    
-    // Extraire les métadonnées
-    const thumbnailUrl = postData.displayUrl || postData.display_url || postData.thumbnail_url || postData.thumbnailUrl || 
-                       (postData.image_versions2?.candidates ? postData.image_versions2.candidates[0].url : undefined);
-    
-    const caption = postData.caption || (postData.edge_media_to_caption?.edges?.length ? postData.edge_media_to_caption.edges[0].node.text : '');
-    const timestamp = postData.timestamp || postData.taken_at || postData.taken_at_timestamp || new Date().toISOString();
-    
-    // Construire le résultat
-    return {
-      videoUrl,
-      thumbnailUrl,
-      title: caption ? (caption.slice(0, 50) + (caption.length > 50 ? '...' : '')) : 'Post Instagram',
-      description: caption || '',
-      publishedAt: typeof timestamp === 'number' ? new Date(timestamp * 1000).toISOString() : timestamp,
-      source: 'instagram',
-      originalUrl: url,
-      metadata: {
-        postId: postData.id,
-        authorName: postData.ownerUsername || postData.owner?.username || postData.user?.username || '',
-        likesCount: postData.likesCount || postData.like_count || postData.edge_media_preview_like?.count,
-        commentsCount: postData.commentsCount || postData.comment_count || postData.edge_media_to_comment?.count,
-        postData: {
-          id: postData.id,
-          caption,
-          timestamp,
-          ownerUsername: postData.ownerUsername || postData.owner?.username || postData.user?.username || '',
-          shortcode: postData.shortcode || postData.code,
-        }
-      }
-    };
+    return await extractInstagramVideoWithRetry(url);
   } catch (error) {
-    // Gestion améliorée des erreurs
-    console.error('Erreur lors de l\'extraction Instagram:', error);
+    // Gestion améliorée des erreurs avec détails sur l'échec du système de rotation
+    console.error('Erreur après plusieurs tentatives d\'extraction Instagram avec différentes IPs:', error);
     
     // Erreurs liées à l'API Instagram
     if (error.message?.includes('IP-BLOCKED') || 
         error.message?.includes('Your Request Couldn\'t be Processed')) {
-      throw new Error(`Instagram a détecté l'extraction automatisée et l'a bloquée. Veuillez réessayer plus tard avec une autre URL. Détails: Limitation par Instagram`);
+      throw new Error(`Instagram a détecté et bloqué toutes nos tentatives d'extraction. Tous nos proxys semblent être bloqués actuellement. Veuillez réessayer plus tard (idéalement dans quelques heures).`);
     }
     
     // Si l'erreur est liée à l'analyse JSON
     if (error instanceof SyntaxError && error.message.includes('Unexpected token')) {
-      throw new Error(`Instagram a bloqué l'extraction de la vidéo. Veuillez réessayer plus tard ou utiliser une autre URL. Erreur: Réponse non valide`);
+      throw new Error(`Instagram a renvoyé des données non valides après plusieurs tentatives. Leur système de protection a probablement été mis à jour récemment.`);
     }
     
     // Pour les erreurs de timeout
     if (error.message?.includes('timeout') || error.name === 'AbortError' || error.code === 'ETIMEDOUT') {
-      throw new Error(`Le délai d'attente pour l'extraction de la vidéo Instagram a été dépassé. Instagram limite les extractions. Veuillez réessayer plus tard.`);
+      throw new Error(`Le délai d'attente a été dépassé sur toutes nos tentatives d'extraction. Instagram limite fortement les extractions actuellement.`);
     }
     
-    // Renvoyer l'erreur avec plus de contexte
-    throw new Error(`Erreur lors de l'extraction de la vidéo Instagram: ${error.message}. Instagram a probablement détecté l'extraction automatisée.`);
+    // Message général pour les autres types d'erreurs
+    throw new Error(`Échec de l'extraction Instagram après plusieurs tentatives avec différentes configurations: ${error.message}`);
   }
 }
 
@@ -844,4 +817,291 @@ function findVideoUrlRecursive(obj: any, path = ''): string | null {
   }
   
   return null;
+}
+
+/**
+ * Version améliorée d'extraction Instagram avec plusieurs tentatives et rotation de proxys
+ */
+async function extractInstagramVideoWithRetry(url: string, maxRetries = 5): Promise<ExtractedVideo> {
+  let lastError: any;
+  
+  // Plusieurs tentatives avec différentes configurations
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    // Sélectionner une configuration de proxy optimale
+    const { proxy, index } = selectProxyConfiguration();
+    console.log(`Tentative ${attempt+1}/${maxRetries} d'extraction Instagram avec proxy ${proxy.countryCode || 'DATACENTER/SMART'}`);
+    
+    try {
+      // Attendre de manière exponentielle entre les tentatives
+      if (attempt > 0) {
+        const delayMs = Math.min(30000, 2000 * Math.pow(2, attempt)); // 2s, 4s, 8s, 16s...
+        console.log(`Attente de ${delayMs/1000}s avant la prochaine tentative...`);
+        await new Promise(resolve => setTimeout(resolve, delayMs));
+      }
+      
+      // Déterminer l'acteur à utiliser 
+      const actorToUse = await getActor('instagram-post-extractor', 'apify/instagram-scraper')
+        .catch(() => 'apify/instagram-scraper');
+      
+      console.log(`Utilisation de l'acteur: ${actorToUse} avec proxy ${proxy.countryCode || 'DATACENTER/SMART'}`);
+      
+      // Configuration de base avec paramètres optimisés
+      const runInput = {
+        directUrls: [url],
+        resultsType: 'posts',
+        addParentData: true,
+        maxRequestRetries: 20, // Augmenté pour plus de persistance
+        maxRequestsPerMinute: Math.max(1, 2 - attempt*0.5), // Stratégie adaptative: plus lent après chaque échec
+        maxConcurrency: 1,
+        maxSessionRotations: 8, // Augmenté pour plus de rotations
+        loginCookies: [],
+        proxy: proxy, // Utiliser la configuration de proxy sélectionnée
+        forceEnglishLocale: true,
+        verboseLog: true,
+        debugLog: true,
+        timeout: 150000 + (attempt * 30000), // Timeout plus long avec marges
+        // En-têtes HTTP aléatoires pour simuler différents navigateurs
+        additionalHttpHeaders: getRandomHeaders(attempt) // Utiliser la version améliorée
+      };
+      
+      // Exécuter l'acteur avec timeout adaptatif
+      const run = await apifyClient.actor(actorToUse).call(runInput, {
+        timeoutSecs: 180 + (attempt * 60), // 3min, puis 4min, etc.
+        waitSecs: 120 + (attempt * 30),    // 2min, puis 2min30, etc.
+      });
+      
+      // Récupérer les résultats
+      const { items } = await apifyClient.dataset(run.defaultDatasetId).listItems();
+      
+      if (!items || items.length === 0) {
+        throw new Error('Aucune donnée extraite depuis Instagram');
+      }
+      
+      // Traitement du résultat comme dans la fonction originale
+      const postData = items[0];
+      // Recherche d'URL vidéo comme dans la fonction originale
+      let videoUrl = extractVideoUrlFromPostData(postData);
+      
+      if (!videoUrl) {
+        throw new Error('Le post Instagram ne contient pas de vidéo');
+      }
+      
+      // Téléchargement de la vidéo
+      const videoResponse = await fetchWithRetry(videoUrl, 3);
+      
+      // Extraire les métadonnées comme dans la fonction originale
+      const thumbnailUrl = postData.displayUrl || postData.display_url || postData.thumbnail_url || postData.thumbnailUrl || 
+                         (postData.image_versions2?.candidates ? postData.image_versions2.candidates[0].url : undefined);
+      
+      const caption = postData.caption || (postData.edge_media_to_caption?.edges?.length ? postData.edge_media_to_caption.edges[0].node.text : '');
+      const timestamp = postData.timestamp || postData.taken_at || postData.taken_at_timestamp || new Date().toISOString();
+      
+      // Mise à jour des statistiques - succès
+      updateProxyStats(index, true);
+      
+      // Construire et retourner le résultat
+      return {
+        videoUrl,
+        thumbnailUrl,
+        title: caption ? (caption.slice(0, 50) + (caption.length > 50 ? '...' : '')) : 'Post Instagram',
+        description: caption || '',
+        publishedAt: typeof timestamp === 'number' ? new Date(timestamp * 1000).toISOString() : timestamp,
+        source: 'instagram',
+        originalUrl: url,
+        metadata: {
+          postId: postData.id,
+          authorName: postData.ownerUsername || postData.owner?.username || postData.user?.username || '',
+          likesCount: postData.likesCount || postData.like_count || postData.edge_media_preview_like?.count,
+          commentsCount: postData.commentsCount || postData.comment_count || postData.edge_media_to_comment?.count,
+          // Inclure des informations sur le proxy utilisé pour le débogage
+          extractionInfo: {
+            proxyCountry: proxy.countryCode || 'DATACENTER',
+            attemptNumber: attempt + 1,
+            extractionTime: new Date().toISOString()
+          },
+          postData: {
+            id: postData.id,
+            caption,
+            timestamp,
+            ownerUsername: postData.ownerUsername || postData.owner?.username || postData.user?.username || '',
+            shortcode: postData.shortcode || postData.code,
+          }
+        }
+      };
+    } catch (error) {
+      console.error(`Échec de la tentative ${attempt+1} avec proxy ${proxy.countryCode || 'DATACENTER/SMART'}:`, error.message);
+      lastError = error;
+      
+      // Mise à jour des statistiques - échec
+      updateProxyStats(index, false);
+      
+      // Si ce n'est pas la dernière tentative, continuer avec la prochaine configuration
+      if (attempt < maxRetries - 1) {
+        console.log(`Passage à la configuration de proxy suivante...`);
+      }
+    }
+  }
+  
+  // Si toutes les tentatives ont échoué, lancer la dernière erreur
+  console.error(`Échec de l'extraction Instagram après ${maxRetries} tentatives avec différentes configurations de proxy`);
+  throw new Error(`Impossible d'extraire la vidéo Instagram après plusieurs tentatives: ${lastError.message}`);
+}
+
+/**
+ * Récupère une URL avec plusieurs tentatives et rotation des User-Agents
+ */
+async function fetchWithRetry(url: string, maxRetries = 3): Promise<Response> {
+  let lastError: any;
+  
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      // Délai exponentiel entre les tentatives
+      if (attempt > 0) {
+        const delayMs = 1000 * Math.pow(2, attempt);
+        await new Promise(resolve => setTimeout(resolve, delayMs));
+      }
+      
+      // Différents headers à chaque tentative
+      const headers = getRandomHeaders(attempt);
+      
+      const response = await fetch(url, {
+        timeout: 60000,
+        headers
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Erreur HTTP ${response.status}: ${response.statusText}`);
+      }
+      
+      return response;
+    } catch (error) {
+      lastError = error;
+      console.error(`Échec de téléchargement (tentative ${attempt+1}/${maxRetries}):`, error.message);
+    }
+  }
+  
+  throw lastError;
+}
+
+/**
+ * Génère des en-têtes HTTP aléatoires pour simuler différents navigateurs
+ * Le paramètre attempt permet d'adapter les en-têtes selon le nombre de tentatives
+ */
+function getRandomHeaders(attempt: number = 0): Record<string, string> {
+  const userAgents = [
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (iPhone; CPU iPhone OS 17_3 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Mobile/15E148 Safari/604.1',
+    'Mozilla/5.0 (iPad; CPU OS 17_3 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Mobile/15E148 Safari/604.1',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36 Edg/121.0.0.0',
+    'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/121.0'
+  ];
+  
+  const languages = [
+    'en-US,en;q=0.9',
+    'fr-FR,fr;q=0.9,en;q=0.8',
+    'en-GB,en;q=0.9',
+    'de-DE,de;q=0.9,en-US;q=0.8,en;q=0.7',
+    'es-ES,es;q=0.9,en;q=0.8',
+    'it-IT,it;q=0.9,en;q=0.8',
+    'en-US,en;q=0.9,fr;q=0.8'
+  ];
+  
+  // Pour les tentatives ultérieures, ajouter des en-têtes plus sophistiqués
+  // pour simuler un navigateur différent
+  const baseHeaders = {
+    'User-Agent': userAgents[Math.floor(Math.random() * userAgents.length)],
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+    'Accept-Language': languages[Math.floor(Math.random() * languages.length)],
+    'Referer': 'https://www.instagram.com/',
+    'Sec-Ch-Ua': '"Not A(Brand";v="99", "Google Chrome";v="121", "Chromium";v="121"',
+    'Sec-Ch-Ua-Mobile': '?0',
+    'Sec-Ch-Ua-Platform': '"macOS"',
+    'Sec-Fetch-Dest': 'document',
+    'Sec-Fetch-Mode': 'navigate',
+    'Sec-Fetch-Site': 'same-origin',
+    'Sec-Fetch-User': '?1',
+    'Pragma': 'no-cache',
+    'Cache-Control': 'no-cache'
+  };
+
+  // Après plusieurs tentatives, simuler un comportement plus humain avec des en-têtes supplémentaires
+  if (attempt >= 2) {
+    // Ajouter des cookies aléatoires pour simuler un utilisateur connecté
+    baseHeaders['Cookie'] = `ig_cb=1; ig_did=${Math.random().toString(36).substring(2, 15)}; mid=${Math.random().toString(36).substring(2, 15)}`;
+    
+    // Simuler différents encodages selon la tentative
+    if (attempt % 2 === 0) {
+      baseHeaders['Accept-Encoding'] = 'gzip, deflate, br';
+    }
+    
+    // Simuler un client mobile pour certaines tentatives
+    if (attempt >= 3) {
+      const mobileUserAgents = [
+        'Mozilla/5.0 (iPhone; CPU iPhone OS 17_3 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/121.0.6167.66 Mobile/15E148 Safari/604.1',
+        'Mozilla/5.0 (iPad; CPU OS 17_3 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/121.0.6167.66 Mobile/15E148 Safari/604.1',
+        'Mozilla/5.0 (Linux; Android 14; SM-S918B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.6167.101 Mobile Safari/537.36'
+      ];
+      
+      baseHeaders['User-Agent'] = mobileUserAgents[Math.floor(Math.random() * mobileUserAgents.length)];
+      baseHeaders['Sec-Ch-Ua-Mobile'] = '?1';
+      baseHeaders['Sec-Ch-Ua-Platform'] = attempt % 2 === 0 ? '"Android"' : '"iOS"';
+    }
+  }
+  
+  return baseHeaders;
+}
+
+/**
+ * Extrait l'URL vidéo de la réponse du scraper Instagram
+ */
+function extractVideoUrlFromPostData(postData: any): string | null {
+  let videoUrl = null;
+  
+  // 1. Vérifier les propriétés directes standard
+  if (postData.videoUrl || postData.video_url) {
+    videoUrl = postData.videoUrl || postData.video_url;
+    console.log('URL vidéo trouvée dans propriété directe:', videoUrl);
+  }
+  // 2. Vérifier dans les media video_versions (format API Instagram)
+  else if (postData.media && postData.media.video_versions && postData.media.video_versions.length > 0) {
+    // Prendre la version avec la meilleure résolution
+    videoUrl = postData.media.video_versions.sort((a, b) => b.width - a.width)[0].url;
+    console.log('URL vidéo trouvée dans media.video_versions:', videoUrl);
+  }
+  // 3. Vérifier dans l'array videos si disponible
+  else if (postData.videos && postData.videos.length > 0) {
+    const videoItem = postData.videos[0];
+    videoUrl = videoItem.url || videoItem.video_url;
+    console.log('URL vidéo trouvée dans videos array:', videoUrl);
+  }
+  // 4. Vérifier les médias carousel (Instagram reels/stories)
+  else if (postData.carousel_media || postData.carousel) {
+    const carouselMedia = postData.carousel_media || postData.carousel;
+    // Parcourir tous les médias du carousel à la recherche d'une vidéo
+    for (const media of carouselMedia) {
+      if (media.video_versions && media.video_versions.length > 0) {
+        videoUrl = media.video_versions.sort((a, b) => b.width - a.width)[0].url;
+        console.log('URL vidéo trouvée dans carousel_media:', videoUrl);
+        break;
+      }
+      if (media.videos && media.videos.length > 0) {
+        videoUrl = media.videos[0].url;
+        console.log('URL vidéo trouvée dans carousel_media.videos:', videoUrl);
+        break;
+      }
+    }
+  }
+  // 5. Recherche récursive en dernier recours
+  else {
+    console.log('Recherche récursive d\'URL vidéo dans les données Instagram...');
+    videoUrl = findVideoUrlRecursive(postData);
+    if (videoUrl) {
+      console.log('URL vidéo trouvée par recherche récursive:', videoUrl);
+    }
+  }
+  
+  return videoUrl;
 } 
