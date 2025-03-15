@@ -11,6 +11,8 @@ const apifyClient = new ApifyClient({
 
 // IDs des acteurs Apify
 const FACEBOOK_PAGE_SCRAPER_ID = 'JJghSZmShuco4j9gJ'; // Acteur personnalisé pour les pages Facebook
+// Changement de l'acteur pour Facebook Ad Library - utiliser un acteur disponible
+const FACEBOOK_AD_LIBRARY_SCRAPER_ID = 'curious_coder/facebook-ads-library-scraper'; // Nouvel acteur pour Ad Library
 
 // Types pour les résultats
 export interface ExtractedVideo {
@@ -140,58 +142,79 @@ async function extractFacebookPageVideo(url: string): Promise<ExtractedVideo> {
 async function extractFacebookAdVideo(url: string): Promise<ExtractedVideo> {
   console.log(`Extraction d'une vidéo depuis Facebook Ad Library: ${url}`);
 
-  // Déterminer l'acteur à utiliser (personnalisé ou par défaut)
-  const actorToUse = await getActor('facebook-ads-extractor', 'zuzka/facebook-ads-library-scraper')
-    .catch(() => 'zuzka/facebook-ads-library-scraper');
+  // Utiliser directement le nouvel acteur pour Facebook Ad Library
+  const actorToUse = FACEBOOK_AD_LIBRARY_SCRAPER_ID;
+  console.log(`Utilisation de l'acteur: ${actorToUse} pour extraire des données de Facebook Ad Library`);
 
-  // Exécuter l'acteur Apify pour Facebook Ads Library
-  const run = await apifyClient.actor(actorToUse).call({
-    startUrls: [{ url }],
-    maxRequestRetries: 5,
-  });
-
-  // Récupérer les résultats
-  const { items } = await apifyClient.dataset(run.defaultDatasetId).listItems();
-  
-  if (!items || items.length === 0) {
-    throw new Error('Aucune donnée extraite depuis Facebook Ad Library');
-  }
-  
-  const adData = items[0];
-  
-  // Vérifier si l'annonce contient une vidéo
-  if (!adData.videos || adData.videos.length === 0) {
-    throw new Error('Aucune vidéo trouvée dans cette annonce Facebook');
-  }
-  
-  // Récupérer l'URL de la première vidéo
-  const videoUrl = adData.videos[0].url;
-  
-  if (!videoUrl) {
-    throw new Error('URL de vidéo non trouvée dans l\'annonce Facebook');
-  }
-  
-  // Télécharger la vidéo depuis l'URL obtenue
-  const videoResponse = await fetch(videoUrl);
-  if (!videoResponse.ok) {
-    throw new Error(`Erreur lors du téléchargement de la vidéo: ${videoResponse.status} ${videoResponse.statusText}`);
-  }
-  
-  // Construire le résultat
-  return {
-    videoUrl,
-    thumbnailUrl: adData.images?.[0]?.url,
-    title: adData.title || adData.message || 'Annonce Facebook',
-    description: adData.message || adData.title || '',
-    publishedAt: adData.startDate,
-    source: 'facebook',
-    originalUrl: url,
-    metadata: {
-      adId: adData.id,
-      advertiserName: adData.advertiserName,
-      adLibraryData: adData
+  try {
+    // Récupérer l'ID de l'annonce à partir de l'URL
+    const urlObj = new URL(url);
+    const adId = urlObj.searchParams.get('id');
+    
+    if (!adId) {
+      throw new Error("ID d'annonce non trouvé dans l'URL");
     }
-  };
+    
+    // Préparer les options de l'acteur pour Facebook Ad Library
+    const input = {
+      searchUrls: [url],
+      scrapeAdDetails: true,
+      proxyConfiguration: {
+        useApifyProxy: true
+      }
+    };
+    
+    // Exécuter l'acteur pour Facebook Ad Library
+    const run = await apifyClient.actor(actorToUse).call(input);
+    
+    // Récupérer les résultats
+    const { items } = await apifyClient.dataset(run.defaultDatasetId).listItems();
+    
+    if (!items || items.length === 0) {
+      throw new Error('Aucune donnée extraite depuis Facebook Ad Library');
+    }
+    
+    console.log(`Données extraites depuis Facebook Ad Library: ${items.length} annonces trouvées`);
+    
+    // Trouver l'annonce correspondant à l'ID
+    const adData = items.find(ad => ad.adId === adId) || items[0];
+    
+    // Extraire l'URL de la vidéo
+    let videoUrl = '';
+    
+    // Adapter en fonction de la structure de l'acteur curious_coder/facebook-ads-library-scraper
+    if (adData.videos && adData.videos.length > 0) {
+      videoUrl = adData.videos[0].url || adData.videos[0].src || '';
+    } else if (adData.media && adData.media.length > 0) {
+      const videoMedia = adData.media.find(m => m.type === 'VIDEO' || m.url.includes('.mp4'));
+      if (videoMedia) {
+        videoUrl = videoMedia.url || videoMedia.src || '';
+      }
+    }
+    
+    if (!videoUrl) {
+      throw new Error('Aucune vidéo trouvée dans cette annonce Facebook');
+    }
+    
+    // Construire le résultat
+    return {
+      videoUrl,
+      thumbnailUrl: adData.thumbnailUrl || (adData.media && adData.media.length > 0 ? adData.media[0].url : ''),
+      title: adData.title || adData.message || 'Annonce Facebook',
+      description: adData.message || adData.description || '',
+      publishedAt: adData.startDate || adData.createdTime || new Date().toISOString(),
+      source: 'facebook',
+      originalUrl: url,
+      metadata: {
+        adId: adData.adId || adData.id,
+        advertiserName: adData.advertiserName || adData.pageName,
+        adLibraryData: adData
+      }
+    };
+  } catch (error) {
+    console.error('Erreur lors de l\'extraction de Facebook Ad Library:', error);
+    throw new Error(`Erreur lors de l'extraction de Facebook Ad Library: ${(error as Error).message}`);
+  }
 }
 
 /**
