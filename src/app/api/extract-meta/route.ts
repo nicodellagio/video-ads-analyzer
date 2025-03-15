@@ -1,11 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { validateUrl } from '@/lib/utils/extractor';
 import type { VideoSource } from '@/lib/utils/extractor';
-import * as bizSdk from 'facebook-nodejs-business-sdk';
 import { v4 as uuidv4 } from 'uuid';
-
-// Importation correcte des classes depuis le SDK
-const { Ad } = bizSdk;
+import { extractVideoFromUrl } from '@/lib/services/apify-extraction';
+import { saveVideoFile } from '@/lib/utils/video';
 
 export const maxDuration = 60; // 1 minute maximum for processing (Vercel hobby plan limit)
 export const dynamic = 'force-dynamic'; // Force dynamic mode to avoid caching
@@ -34,107 +32,61 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Vérifier si les identifiants Meta API sont configurés
-    if (!process.env.META_ACCESS_TOKEN || !process.env.META_APP_ID || !process.env.META_APP_SECRET) {
+    // Vérifier si le token API Apify est configuré
+    if (!process.env.APIFY_API_TOKEN) {
       return NextResponse.json({
-        error: 'META API is not configured. Please set META_ACCESS_TOKEN, META_APP_ID, and META_APP_SECRET environment variables.'
+        error: 'APIFY_API_TOKEN is not configured in environment variables'
       }, { status: 500 });
     }
 
-    // Configurer l'API Meta
-    bizSdk.FacebookAdsApi.init(process.env.META_ACCESS_TOKEN);
-
-    // Extraction avec SDK Meta
+    // Extraction avec Apify
     try {
-      console.log(`Extraction depuis ${source} en utilisant Meta API...`);
+      console.log(`Extraction depuis ${source} en utilisant Apify...`);
       
-      let adId = '';
+      // Utiliser le service Apify pour extraire la vidéo
+      const extractedVideo = await extractVideoFromUrl(url);
+      console.log('Vidéo extraite avec succès:', extractedVideo.videoUrl);
       
-      // Extraire l'ID de l'annonce depuis l'URL
-      if (url.includes('ads/library')) {
-        const urlParams = new URL(url).searchParams;
-        adId = urlParams.get('id') || '';
-        
-        if (!adId) {
-          throw new Error('ID d\'annonce non trouvé dans l\'URL');
-        }
-      } else {
-        throw new Error('URL non supportée pour l\'extraction Meta');
+      // Télécharger la vidéo depuis l'URL extraite
+      console.log('Téléchargement de la vidéo...');
+      const videoResponse = await fetch(extractedVideo.videoUrl);
+      
+      if (!videoResponse.ok) {
+        throw new Error(`Erreur lors du téléchargement de la vidéo: ${videoResponse.status} ${videoResponse.statusText}`);
       }
       
-      console.log(`ID d'annonce trouvé: ${adId}`);
+      // Convertir la réponse en blob
+      const videoBlob = await videoResponse.blob();
       
-      // Récupérer les détails de l'annonce
-      const ad = await Ad(adId).get([
-        'id',
-        'name',
-        'creative',
-        'adset_id',
-        'campaign_id',
-        'status',
-        'created_time',
-        'updated_time'
-      ]);
-      
-      // Récupérer les créatifs
-      const creative = await ad.creative.get([
-        'id',
-        'name',
-        'title',
-        'body',
-        'image_url',
-        'video_id',
-        'thumbnail_url',
-        'asset_feed_spec'
-      ]);
-      
-      let videoUrl = '';
-      let thumbnailUrl = '';
-      
-      if (creative.video_id) {
-        // Récupérer l'URL de la vidéo
-        const video = await bizSdk.Video(creative.video_id).get([
-          'id',
-          'source',
-          'picture',
-          'title',
-          'description',
-          'length'
-        ]);
-        
-        videoUrl = video.source || '';
-        thumbnailUrl = video.picture || creative.thumbnail_url || '';
-      }
-      
-      if (!videoUrl) {
-        throw new Error('Aucune vidéo trouvée dans cette annonce');
-      }
-      
-      // Générer un identifiant unique
+      // Générer un identifiant unique et un nom de fichier
       const fileId = uuidv4();
+      const fileExtension = 'mp4'; // Forcer l'extension mp4 pour la compatibilité
+      const fileName = `${fileId}.${fileExtension}`;
       
-      // Construction des métadonnées
+      // Convertir le blob en File
+      const videoFile = new File([videoBlob], fileName, { 
+        type: 'video/mp4' // Forcer le type MIME pour la compatibilité
+      });
+      
+      // Sauvegarder le fichier (localement ou sur S3 selon l'environnement)
+      console.log('Sauvegarde du fichier vidéo...');
+      const { filePath, s3Key, url: fileUrl } = await saveVideoFile(videoFile, fileName);
+      
+      // Construire les métadonnées de la vidéo
       const videoMetadata = {
         id: fileId,
-        url: videoUrl,
-        thumbnailUrl: thumbnailUrl,
-        title: creative.title || ad.name || 'Annonce Facebook',
-        description: creative.body || '',
-        duration: '00:00:30', // Durée par défaut
-        originalName: `ad_${adId}.mp4`,
-        source: 'facebook',
-        originalUrl: url,
-        metadata: {
-          adId: ad.id,
-          adName: ad.name,
-          adsetId: ad.adset_id,
-          campaignId: ad.campaign_id,
-          status: ad.status,
-          createdTime: ad.created_time,
-          updatedTime: ad.updated_time,
-          creativeId: creative.id,
-          creativeName: creative.name
-        }
+        url: fileUrl || `/uploads/${fileName}`,
+        s3Key,
+        format: `${extractedVideo.metadata?.width || 'unknown'}x${extractedVideo.metadata?.height || 'unknown'}`,
+        size: `${(videoBlob.size / (1024 * 1024)).toFixed(1)} MB`,
+        duration: extractedVideo.duration || '00:00:30', // Durée par défaut si non disponible
+        originalName: fileName,
+        title: extractedVideo.title,
+        description: extractedVideo.description,
+        thumbnailUrl: extractedVideo.thumbnailUrl,
+        source: extractedVideo.source,
+        originalUrl: extractedVideo.originalUrl,
+        metadata: extractedVideo.metadata
       };
       
       console.log('Extraction Meta complète:', videoMetadata);
