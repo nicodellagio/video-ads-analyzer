@@ -57,6 +57,33 @@ export async function POST(request: NextRequest) {
       
       // Utiliser le service Apify pour extraire la vidéo
       const extractedVideo = await extractVideoFromUrl(url);
+      
+      // Vérifier si c'est une annonce avec uniquement des images
+      const containsOnlyImages = extractedVideo.metadata?.containsOnlyImages === true;
+      
+      if (containsOnlyImages) {
+        console.log('Annonce contenant uniquement des images extraite avec succès');
+        
+        // Construire une réponse spéciale pour les annonces avec uniquement des images
+        return NextResponse.json({ 
+          success: true, 
+          containsOnlyImages: true,
+          adInfo: {
+            title: extractedVideo.title || 'Annonce Facebook',
+            description: extractedVideo.description || '',
+            thumbnailUrl: extractedVideo.thumbnailUrl,
+            images: extractedVideo.metadata?.images || [],
+            source: extractedVideo.source,
+            originalUrl: extractedVideo.originalUrl,
+            metadata: {
+              ...extractedVideo.metadata,
+              extractionMethod: 'apify',
+              extractionTime: new Date().toISOString()
+            }
+          }
+        });
+      }
+      
       console.log('Vidéo extraite avec succès:', extractedVideo.videoUrl);
       
       // Vérifier si nous avons une URL vidéo valide

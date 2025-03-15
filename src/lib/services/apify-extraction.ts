@@ -213,13 +213,47 @@ async function extractFacebookAdVideo(url: string): Promise<ExtractedVideo> {
       thumbnailUrl = video.videoPreviewImageUrl || video.thumbnailUrl || '';
     }
     
-    // Si on n'a pas trouvé de vidéo, lever une erreur
+    // Si on n'a pas trouvé de vidéo, vérifier s'il y a des images
     if (!videoUrl) {
-      // Vérifier si des images sont disponibles (cas où l'annonce n'a pas de vidéo)
+      // Extraire les images disponibles
+      let images: string[] = [];
+      
       if (adData.snapshot && adData.snapshot.images && adData.snapshot.images.length > 0) {
-        throw new Error('Cette annonce Facebook ne contient pas de vidéo, seulement des images.');
+        // Extraire les URLs des images
+        images = adData.snapshot.images.map(img => img.resizedImageUrl || img.originalImageUrl).filter(Boolean);
+        
+        if (images.length === 0 && adData.snapshot.extraImages && adData.snapshot.extraImages.length > 0) {
+          images = adData.snapshot.extraImages.map(img => img.resizedImageUrl || img.originalImageUrl).filter(Boolean);
+        }
+        
+        // Pour la vignette, utiliser la première image
+        thumbnailUrl = images[0] || '';
+        
+        // Extraire titre et description
+        title = adData.snapshot.title || adData.pageName || 'Annonce Facebook';
+        description = adData.snapshot.body?.text || adData.snapshot.linkDescription || '';
+        
+        // Renvoi d'une structure spéciale indiquant qu'il s'agit d'une annonce avec images
+        return {
+          videoUrl: '', // Pas de vidéo
+          thumbnailUrl,
+          title,
+          description,
+          publishedAt: adData.startDateFormatted || new Date().toISOString(),
+          source: 'facebook',
+          originalUrl: url,
+          metadata: {
+            adId: adData.adArchiveID || adData.adArchiveId,
+            pageName: adData.pageName,
+            pageId: adData.pageId,
+            categories: adData.categories,
+            containsOnlyImages: true, // Indicateur important!
+            images,
+            adData
+          }
+        };
       } else {
-        throw new Error('Aucune vidéo trouvée dans cette annonce Facebook.');
+        throw new Error('Aucune vidéo ni image trouvée dans cette annonce Facebook.');
       }
     }
     
@@ -256,6 +290,7 @@ async function extractFacebookAdVideo(url: string): Promise<ExtractedVideo> {
         pageName: adData.pageName,
         pageId: adData.pageId,
         categories: adData.categories,
+        containsOnlyImages: false,
         adData
       }
     };

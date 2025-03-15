@@ -7,8 +7,7 @@ import {
   exportReport, 
   extractVideoFromUrl,
   uploadVideoFile,
-  translateText,
-  extractMetaAd
+  translateText
 } from '@/lib/services/api';
 
 // Types
@@ -181,38 +180,19 @@ export const AnalyzerProvider: React.FC<{ children: ReactNode }> = ({ children }
       const progressInterval = simulateProgress();
       
       // 1. Extraire la vidéo
-      let extractionResult;
+      const extractionResult = await extractVideoFromUrl(url, source) as any;
       
-      // Utiliser l'API Meta officielle pour les sources Meta
-      if (source === 'meta') {
-        try {
-          console.log("Utilisation de l'API Meta officielle pour l'extraction");
-          extractionResult = await extractMetaAd(url);
-          
-          // Formater le résultat pour qu'il soit compatible avec le reste du flux
-          if (extractionResult.success && extractionResult.videoUrl) {
-            extractionResult = {
-              videoMetadata: {
-                url: extractionResult.videoUrl,
-                duration: '00:00:30', // Valeur par défaut, à remplacer par des données réelles si disponibles
-                format: 'MP4',
-                size: 'Unknown',
-                originalName: `meta_ad_${extractionResult.adDetails.adId}.mp4`,
-                id: extractionResult.adDetails.adId,
-                // Autres métadonnées que vous pourriez avoir
-                source: 'meta',
-                adDetails: extractionResult.adDetails
-              }
-            };
-          }
-        } catch (metaError) {
-          console.error("Erreur avec l'API Meta officielle, tentative avec l'extracteur générique", metaError);
-          // Fallback sur l'extracteur générique en cas d'échec
-          extractionResult = await extractVideoFromUrl(url, source) as any;
-        }
-      } else {
-        // Utiliser l'extracteur générique pour les autres sources
-        extractionResult = await extractVideoFromUrl(url, source) as any;
+      // Vérifier si le résultat indique une annonce avec uniquement des images
+      if (extractionResult.containsOnlyImages && extractionResult.adInfo) {
+        clearInterval(progressInterval);
+        setIsProcessing(false);
+        setProgress(0);
+        
+        // Afficher une erreur conviviale qui explique clairement la situation
+        const adTitle = extractionResult.adInfo.title || 'Cette annonce';
+        setError(`${adTitle} ne contient pas de vidéo, seulement des images. Veuillez sélectionner une annonce contenant une vidéo pour l'analyser.`);
+        
+        return;
       }
       
       // Vérifier la structure de la réponse et extraire les métadonnées vidéo

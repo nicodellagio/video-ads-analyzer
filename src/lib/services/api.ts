@@ -113,7 +113,16 @@ export async function extractVideoFromUrl(url: string, source: 'instagram' | 'me
       throw new Error(errorData.error || 'Error during video extraction');
     }
 
-    return await response.json();
+    const data = await response.json();
+    
+    // Si la réponse indique une annonce avec uniquement des images, renvoyer directement 
+    // l'objet pour que le contexte de l'analyseur puisse le gérer proprement
+    if (data.containsOnlyImages === true) {
+      console.log('Annonce contenant uniquement des images détectée:', data.adInfo.title);
+      return data;
+    }
+    
+    return data;
   } catch (error) {
     console.error('Video extraction error:', error);
     throw error;
@@ -139,29 +148,6 @@ export async function uploadVideoFile(file: File) {
     return await response.json();
   } catch (error) {
     console.error('Video upload error:', error);
-    throw error;
-  }
-}
-
-// Function for extracting video from Meta platforms (Facebook, Instagram)
-export async function extractMetaAd(url: string) {
-  try {
-    const response = await fetch('/api/extract-meta', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ url }),
-    });
-
-    if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(errorData.error || 'Error extracting video from Meta');
-    }
-
-    return await response.json();
-  } catch (error) {
-    console.error('Meta extraction error:', error);
     throw error;
   }
 } 
