@@ -621,52 +621,168 @@ async function extractFacebookPostVideo(url: string): Promise<ExtractedVideo> {
 async function extractInstagramVideo(url: string): Promise<ExtractedVideo> {
   console.log(`Extraction d'une vidéo depuis Instagram: ${url}`);
 
-  // Déterminer l'acteur à utiliser (personnalisé ou par défaut)
-  const actorToUse = await getActor('instagram-post-extractor', 'apify/instagram-scraper')
-    .catch(() => 'apify/instagram-scraper');
+  try {
+    // Déterminer l'acteur à utiliser (personnalisé ou par défaut)
+    const actorToUse = await getActor('instagram-post-extractor', 'apify/instagram-scraper')
+      .catch(() => 'apify/instagram-scraper');
 
-  // Exécuter l'acteur Apify pour Instagram Scraper
-  const run = await apifyClient.actor(actorToUse).call({
-    directUrls: [url],
-    resultsType: 'posts',
-    maxRequestRetries: 5,
-  });
+    console.log(`Utilisation de l'acteur: ${actorToUse} pour extraire des données d'Instagram`);
 
-  // Récupérer les résultats
-  const { items } = await apifyClient.dataset(run.defaultDatasetId).listItems();
-  
-  if (!items || items.length === 0) {
-    throw new Error('Aucune donnée extraite depuis Instagram');
-  }
-  
-  const postData = items[0];
-  
-  // Vérifier si le post contient une vidéo
-  if (!postData.videoUrl) {
-    throw new Error('Aucune vidéo trouvée dans ce post Instagram');
-  }
-  
-  const videoUrl = postData.videoUrl;
-  
-  // Télécharger la vidéo depuis l'URL obtenue
-  const videoResponse = await fetch(videoUrl);
-  if (!videoResponse.ok) {
-    throw new Error(`Erreur lors du téléchargement de la vidéo: ${videoResponse.status} ${videoResponse.statusText}`);
-  }
-  
-  // Construire le résultat
-  return {
-    videoUrl,
-    thumbnailUrl: postData.displayUrl,
-    title: postData.caption ? postData.caption.slice(0, 50) + '...' : 'Post Instagram',
-    description: postData.caption || '',
-    publishedAt: postData.timestamp,
-    source: 'instagram',
-    originalUrl: url,
-    metadata: {
-      postId: postData.id,
-      authorName: postData.ownerUsername,
-      postData
+    // Configuration améliorée pour l'acteur Instagram
+    const runInput = {
+      directUrls: [url],
+      resultsType: 'posts',
+      maxRequestRetries: 10, // Augmenter le nombre de tentatives
+      maxRequestsPerMinute: 5, // Limiter le taux de requêtes pour éviter le blocage
+      maxConcurrency: 1, // Réduire la concurrence
+      maxSessionRotations: 3, // Permettre la rotation des sessions
+      loginCookies: [], // Par défaut, pas de cookies de connexion
+      proxy: {
+        useApifyProxy: true, // Utiliser le proxy Apify
+        apifyProxyGroups: ['RESIDENTIAL'], // Utiliser des proxys résidentiels pour de meilleures chances
+      },
+      // Paramètres pour aider à éviter les blocages par Instagram
+      forceEnglishLocale: true,
+      verboseLog: true, // Activer les logs détaillés pour le débogage
+      timeout: 60000, // Timeout de 60 secondes
+    };
+
+    // Exécuter l'acteur Apify pour Instagram Scraper avec un timeout plus long
+    console.log('Démarrage de l\'acteur Instagram avec les paramètres:', JSON.stringify(runInput, null, 2));
+    const run = await apifyClient.actor(actorToUse).call(runInput, { timeoutSecs: 120 });
+
+    // Attendre un peu plus longtemps pour les résultats
+    console.log('Récupération des résultats de l\'acteur Instagram...');
+    const { items } = await apifyClient.dataset(run.defaultDatasetId).listItems();
+    
+    if (!items || items.length === 0) {
+      console.error('Aucune donnée extraite depuis Instagram');
+      throw new Error('Aucune donnée extraite depuis Instagram. Instagram limite peut-être les extractions.');
     }
-  };
+    
+    // Log détaillé pour le débogage
+    console.log(`Données extraites depuis Instagram: ${items.length} éléments trouvés`);
+    console.log('Premier élément trouvé:', JSON.stringify(items[0]).slice(0, 500) + '...');
+    
+    const postData = items[0];
+    
+    // Vérification plus robuste des données de la vidéo
+    if (!postData.videoUrl && !postData.video_url) {
+      // Rechercher la vidéo de manière plus approfondie
+      let videoUrl = null;
+      
+      // Vérifier différentes propriétés qui pourraient contenir l'URL de la vidéo
+      if (postData.media && postData.media.video_versions && postData.media.video_versions.length > 0) {
+        videoUrl = postData.media.video_versions[0].url;
+      } else if (postData.videos && postData.videos.length > 0) {
+        videoUrl = postData.videos[0].url || postData.videos[0].video_url;
+      } else if (postData.carousel_media) {
+        // Parcourir les médias du carousel pour trouver une vidéo
+        for (const media of postData.carousel_media) {
+          if (media.video_versions && media.video_versions.length > 0) {
+            videoUrl = media.video_versions[0].url;
+            break;
+          }
+        }
+      } else if (typeof postData === 'object') {
+        // Recherche récursive dans l'objet pour trouver une URL vidéo
+        videoUrl = findVideoUrlRecursive(postData);
+      }
+      
+      if (!videoUrl) {
+        console.error('Aucune vidéo trouvée dans ce post Instagram');
+        throw new Error('Le post Instagram ne contient pas de vidéo ou Instagram limite l\'accès aux vidéos');
+      }
+      
+      postData.videoUrl = videoUrl;
+    }
+    
+    const videoUrl = postData.videoUrl || postData.video_url;
+    console.log(`URL vidéo Instagram trouvée: ${videoUrl}`);
+    
+    // Vérifier que l'URL vidéo est valide
+    if (!videoUrl.startsWith('http')) {
+      throw new Error(`URL vidéo Instagram invalide: ${videoUrl}`);
+    }
+    
+    // Télécharger la vidéo depuis l'URL obtenue avec un timeout plus long
+    console.log(`Téléchargement de la vidéo Instagram depuis: ${videoUrl}`);
+    const videoResponse = await fetch(videoUrl, { 
+      timeout: 30000, // 30 secondes de timeout pour le téléchargement
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.110 Safari/537.36',
+        'Accept': 'video/mp4,video/*;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.5',
+        'Referer': 'https://www.instagram.com/'
+      }
+    });
+    
+    if (!videoResponse.ok) {
+      throw new Error(`Erreur lors du téléchargement de la vidéo Instagram: ${videoResponse.status} ${videoResponse.statusText}`);
+    }
+    
+    // Construire le résultat
+    return {
+      videoUrl,
+      thumbnailUrl: postData.displayUrl || postData.display_url || postData.thumbnail_url || postData.thumbnailUrl,
+      title: postData.caption ? (postData.caption.slice(0, 50) + (postData.caption.length > 50 ? '...' : '')) : 'Post Instagram',
+      description: postData.caption || '',
+      publishedAt: postData.timestamp || postData.taken_at || new Date().toISOString(),
+      source: 'instagram',
+      originalUrl: url,
+      metadata: {
+        postId: postData.id,
+        authorName: postData.ownerUsername || postData.owner?.username || postData.user?.username,
+        postData
+      }
+    };
+  } catch (error) {
+    // Gestion améliorée des erreurs
+    console.error('Erreur lors de l\'extraction Instagram:', error);
+    
+    // Si l'erreur est liée à l'analyse JSON, ajoutez des informations supplémentaires
+    if (error instanceof SyntaxError && error.message.includes('Unexpected token')) {
+      throw new Error(`Instagram a bloqué l'extraction de la vidéo. Veuillez réessayer plus tard ou utiliser une autre URL. Détails: ${error.message}`);
+    }
+    
+    // Pour les erreurs de timeout
+    if (error.message.includes('timeout') || error.name === 'AbortError' || error.code === 'ETIMEDOUT') {
+      throw new Error(`Le délai d'attente pour l'extraction de la vidéo Instagram a été dépassé. Instagram limite peut-être les extractions. Veuillez réessayer plus tard.`);
+    }
+    
+    // Renvoyer l'erreur avec plus de contexte
+    throw new Error(`Erreur lors de l'extraction de la vidéo Instagram: ${error.message}. Instagram a probablement détecté l'extraction automatisée.`);
+  }
+}
+
+// Fonction utilitaire pour rechercher récursivement une URL de vidéo
+function findVideoUrlRecursive(obj: any, path = ''): string | null {
+  if (!obj || typeof obj !== 'object') return null;
+  
+  for (const key in obj) {
+    const currentPath = path ? `${path}.${key}` : key;
+    
+    // Rechercher les clés qui pourraient contenir des URL vidéo
+    if (
+      typeof obj[key] === 'string' && 
+      obj[key].length > 10 &&
+      (
+        (key.toLowerCase().includes('video') && key.toLowerCase().includes('url')) ||
+        (key.toLowerCase() === 'url' && currentPath.toLowerCase().includes('video')) ||
+        (key.toLowerCase() === 'src' && obj[key].includes('.mp4'))
+      ) && 
+      obj[key].startsWith('http')
+    ) {
+      console.log(`URL vidéo Instagram trouvée dans ${currentPath}:`, obj[key]);
+      return obj[key];
+    }
+    
+    // Recherche récursive
+    if (typeof obj[key] === 'object' && obj[key] !== null) {
+      const result = findVideoUrlRecursive(obj[key], currentPath);
+      if (result) return result;
+    }
+  }
+  
+  return null;
 } 

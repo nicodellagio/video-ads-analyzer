@@ -99,17 +99,45 @@ export async function exportReport(transcription: any, analysis: any, format: 'p
 // Function for video extraction from URL
 export async function extractVideoFromUrl(url: string, source: 'instagram' | 'meta' | 'youtube' | 'tiktok' | 'upload') {
   try {
-    // Call extraction API
+    // Pour Instagram, ajouter un message spécial indiquant que l'extraction peut prendre du temps
+    const isInstagram = source === 'instagram' || url.includes('instagram.com');
+    if (isInstagram) {
+      console.log('Extraction d\'une vidéo Instagram. Cela peut prendre un peu plus de temps...');
+    }
+
+    // Call extraction API with a longer timeout for Instagram
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), isInstagram ? 120000 : 60000); // 2 minutes pour Instagram, 1 minute pour les autres
+
     const response = await fetch('/api/extract', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({ url, source }),
+      signal: controller.signal
     });
 
+    clearTimeout(timeoutId); // Nettoyer le timeout
+
+    // Vérifier si la réponse est une erreur 429 (Too Many Requests) pour Instagram
+    if (response.status === 429 && isInstagram) {
+      const data = await response.json();
+      console.error('Limitation d\'Instagram détectée:', data.error);
+      throw new Error(data.error || 'Instagram limite actuellement l\'extraction de vidéos. Veuillez réessayer plus tard ou utiliser une URL différente.');
+    }
+
     if (!response.ok) {
-      const errorData = await response.json();
+      const errorData = await response.json().catch(() => ({ error: `Erreur HTTP ${response.status}: ${response.statusText}` }));
+      
+      // Gestion spécifique des erreurs d'Instagram
+      if (isInstagram) {
+        const errorMessage = errorData.error || 'Error during video extraction';
+        if (errorMessage.includes('JSON') || errorMessage.includes('timeout') || errorMessage.includes('Instagram')) {
+          throw new Error(`Instagram a limité l'extraction de cette vidéo. Veuillez réessayer plus tard ou utiliser une autre URL. Détails: ${errorMessage}`);
+        }
+      }
+      
       throw new Error(errorData.error || 'Error during video extraction');
     }
 
@@ -130,6 +158,18 @@ export async function extractVideoFromUrl(url: string, source: 'instagram' | 'me
     
     return data;
   } catch (error) {
+    // Gestion spécifique des erreurs d'extraction Instagram
+    if ((error.message && error.message.includes('Instagram')) || 
+        (url && url.includes('instagram.com'))) {
+      console.error('Erreur d\'extraction Instagram:', error);
+      
+      if (error.name === 'AbortError') {
+        throw new Error('L\'extraction de la vidéo Instagram a pris trop de temps. Instagram limite peut-être les extractions. Veuillez réessayer plus tard.');
+      }
+      
+      throw new Error(`Impossible d'extraire cette vidéo Instagram: ${error.message}. Instagram protège ses contenus contre l'extraction automatisée.`);
+    }
+    
     console.error('Video extraction error:', error);
     throw error;
   }

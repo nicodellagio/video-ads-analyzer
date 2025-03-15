@@ -6,7 +6,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { extractVideoFromUrl } from '@/lib/services/apify-extraction';
 import { saveVideoFile } from '@/lib/utils/video';
 
-export const maxDuration = 60; // 1 minute maximum for processing (Vercel hobby plan limit)
+export const maxDuration = 120; // Augmenter à 2 minutes pour les extractions qui peuvent prendre du temps
 export const dynamic = 'force-dynamic'; // Force dynamic mode to avoid caching
 
 export async function POST(request: NextRequest) {
@@ -55,8 +55,34 @@ export async function POST(request: NextRequest) {
       const isFacebookAdLibrary = url.includes('facebook.com') && url.includes('ads/library');
       const actualSource = isFacebookAdLibrary ? 'facebook' : source;
       
+      // Pour Instagram, ajouter un traitement spécial vu les limitations fréquentes
+      const isInstagram = source === 'instagram' || url.includes('instagram.com');
+      if (isInstagram) {
+        console.log(`Traitement spécial pour extraction Instagram: ${url}`);
+      }
+      
       // Utiliser le service Apify pour extraire la vidéo
-      const extractedVideo = await extractVideoFromUrl(url);
+      let extractedVideo;
+      try {
+        extractedVideo = await extractVideoFromUrl(url);
+      } catch (extractionError) {
+        console.error('Erreur lors de l\'extraction de la vidéo:', extractionError);
+        
+        // Gestion spéciale pour les erreurs Instagram
+        if (isInstagram && (
+          extractionError.message.includes('Instagram a bloqué') || 
+          extractionError.message.includes('limite') ||
+          extractionError.message.includes('timeout') ||
+          extractionError.message.includes('not valid JSON')
+        )) {
+          return NextResponse.json({
+            error: `Instagram limite actuellement l'extraction de vidéos. Veuillez réessayer plus tard ou utiliser une URL différente. Détails: ${extractionError.message}`,
+            isInstagramLimitError: true
+          }, { status: 429 }); // 429 Too Many Requests est approprié pour les limitations
+        }
+        
+        throw extractionError; // Relancer pour la gestion générale des erreurs
+      }
       
       // Vérifier si c'est une annonce avec uniquement des images
       const containsOnlyImages = extractedVideo.metadata?.containsOnlyImages === true;
