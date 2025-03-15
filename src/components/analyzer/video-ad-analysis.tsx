@@ -472,9 +472,19 @@ export default function VideoAdAnalysis() {
         size = `${(bytes / 1073741824).toFixed(2)} GB`;
       }
     } else if (videoMetadata?.url) {
-      const parts = videoMetadata.url.split('.');
+      // Extraction du format plus robuste pour gérer les URLs S3 signées
+      // Exemple: https://something.s3.amazonaws.com/video.mp4?X-Amz-Algorithm=...
+      const urlPath = videoMetadata.url.split('?')[0]; // Retirer tous les paramètres d'URL
+      const parts = urlPath.split('.');
       if (parts.length > 1) {
-        format = parts[parts.length - 1];
+        format = parts[parts.length - 1].toLowerCase(); // Prendre seulement l'extension
+        
+        // S'assurer que le format est propre, sans paramètres supplémentaires
+        if (format.includes('/')) {
+          format = 'mp4'; // Format par défaut si l'extension est corrompue
+        }
+      } else {
+        format = 'mp4'; // Format par défaut si aucune extension n'est trouvée
       }
     }
     setRealMetadata({ duration, format: format || '', size: size || '' });

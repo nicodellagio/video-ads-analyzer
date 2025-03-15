@@ -174,7 +174,7 @@ export async function POST(request: NextRequest) {
         id: fileId,
         url: fileUrl || `/uploads/${fileName}`,
         s3Key,
-        format: `${extractedVideo.metadata?.width || 'unknown'}x${extractedVideo.metadata?.height || 'unknown'}`,
+        format: 'mp4', // Format simple et cohérent
         size: `${(videoBlob.size / (1024 * 1024)).toFixed(1)} MB`,
         duration: extractedVideo.duration || '00:00:30', // Durée par défaut si non disponible
         originalName: extractedVideo.title || fileName,
@@ -185,6 +185,8 @@ export async function POST(request: NextRequest) {
         originalUrl: extractedVideo.originalUrl,
         metadata: {
           ...extractedVideo.metadata,
+          width: extractedVideo.metadata?.width || 'unknown',
+          height: extractedVideo.metadata?.height || 'unknown',
           extractionMethod: 'apify',
           extractionTime: new Date().toISOString()
         }
