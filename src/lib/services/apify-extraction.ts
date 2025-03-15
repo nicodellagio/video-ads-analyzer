@@ -181,6 +181,9 @@ async function extractFacebookAdVideo(url: string): Promise<ExtractedVideo> {
     // Trouver l'annonce avec l'adArchiveID correspondant à l'ID
     const adData = items.find(ad => ad.adArchiveID === adId || ad.adArchiveId === adId) || items[0];
     
+    // Log détaillé pour le débogage
+    console.log('Structure complète des données de l\'annonce:', JSON.stringify(adData, null, 2));
+    
     // Extraire l'URL de la vidéo
     let videoUrl = '';
     let thumbnailUrl = '';
@@ -193,6 +196,7 @@ async function extractFacebookAdVideo(url: string): Promise<ExtractedVideo> {
       const video = adData.snapshot.videos[0];
       videoUrl = video.videoHdUrl || video.videoSdUrl || '';
       thumbnailUrl = video.videoPreviewImageUrl || '';
+      console.log('Vidéo trouvée dans snapshot.videos:', videoUrl);
     } 
     // Vérifier les cartes qui contiennent souvent des vidéos
     else if (adData.snapshot && adData.snapshot.cards && adData.snapshot.cards.length > 0) {
@@ -202,6 +206,7 @@ async function extractFacebookAdVideo(url: string): Promise<ExtractedVideo> {
           thumbnailUrl = card.videoPreviewImageUrl || card.resizedImageUrl || '';
           title = card.title || '';
           description = card.body || '';
+          console.log('Vidéo trouvée dans snapshot.cards:', videoUrl);
           break;
         }
       }
@@ -211,6 +216,173 @@ async function extractFacebookAdVideo(url: string): Promise<ExtractedVideo> {
       const video = adData.snapshot.extraVideos[0];
       videoUrl = video.videoHdUrl || video.videoSdUrl || video.url || '';
       thumbnailUrl = video.videoPreviewImageUrl || video.thumbnailUrl || '';
+      console.log('Vidéo trouvée dans snapshot.extraVideos:', videoUrl);
+    }
+    // Vérifier creatives si disponible
+    else if (adData.creatives && adData.creatives.length > 0) {
+      for (const creative of adData.creatives) {
+        // Chercher dans les attributs possibles de vidéo
+        if (creative.videoUrl || creative.video_url || creative.media_url) {
+          videoUrl = creative.videoUrl || creative.video_url || creative.media_url;
+          thumbnailUrl = creative.thumbnailUrl || creative.thumbnail_url || creative.image_url || '';
+          console.log('Vidéo trouvée dans creatives:', videoUrl);
+          break;
+        }
+      }
+    }
+    // Vérifier creativeAssets
+    else if (adData.creativeAssets && adData.creativeAssets.length > 0) {
+      for (const asset of adData.creativeAssets) {
+        if (asset.video_hd_url || asset.video_sd_url || asset.video_url) {
+          videoUrl = asset.video_hd_url || asset.video_sd_url || asset.video_url;
+          thumbnailUrl = asset.thumbnail_url || asset.image_url || '';
+          console.log('Vidéo trouvée dans creativeAssets:', videoUrl);
+          break;
+        }
+      }
+    }
+    // Vérifier directement dans l'objet adData
+    else if (adData.videoUrl || adData.video_url) {
+      videoUrl = adData.videoUrl || adData.video_url;
+      thumbnailUrl = adData.thumbnailUrl || adData.thumbnail_url || '';
+      console.log('Vidéo trouvée directement dans adData:', videoUrl);
+    }
+    // Chercher dans les médias des annonces Facebook Ad Library
+    else if (adData.media && Array.isArray(adData.media)) {
+      for (const mediaItem of adData.media) {
+        if (mediaItem.source && typeof mediaItem.source === 'string' && 
+            (mediaItem.source.includes('.mp4') || mediaItem.type === 'video')) {
+          videoUrl = mediaItem.source;
+          thumbnailUrl = mediaItem.poster || mediaItem.thumbnail || '';
+          console.log('Vidéo trouvée dans adData.media:', videoUrl);
+          break;
+        }
+      }
+    }
+    // Chercher dans adMediaLibrary
+    else if (adData.adMediaLibrary && Array.isArray(adData.adMediaLibrary)) {
+      for (const mediaItem of adData.adMediaLibrary) {
+        if (mediaItem.video_url || mediaItem.media_url || mediaItem.source) {
+          videoUrl = mediaItem.video_url || mediaItem.media_url || mediaItem.source;
+          thumbnailUrl = mediaItem.thumbnail_url || mediaItem.image_url || '';
+          console.log('Vidéo trouvée dans adData.adMediaLibrary:', videoUrl);
+          break;
+        }
+      }
+    }
+    // Chercher dans les creativeMedias
+    else if (adData.creativeMedias && Array.isArray(adData.creativeMedias)) {
+      for (const media of adData.creativeMedias) {
+        if (media.url && typeof media.url === 'string' && 
+            (media.url.includes('.mp4') || media.type === 'VIDEO')) {
+          videoUrl = media.url;
+          thumbnailUrl = media.thumbnail_url || media.thumbnailUrl || '';
+          console.log('Vidéo trouvée dans adData.creativeMedias:', videoUrl);
+          break;
+        }
+      }
+    }
+    // Chercher dans les données brutes de l'annonce
+    else if (adData.raw && typeof adData.raw === 'string') {
+      try {
+        // Certains extracteurs stockent les données brutes sous forme de chaîne JSON
+        const rawData = JSON.parse(adData.raw);
+        console.log('Données brutes de l\'annonce détectées, recherche de vidéos...');
+        
+        // Chercher dans les médias des données brutes
+        if (rawData.media && Array.isArray(rawData.media)) {
+          for (const mediaItem of rawData.media) {
+            if (mediaItem.source && typeof mediaItem.source === 'string' && 
+                (mediaItem.source.includes('.mp4') || mediaItem.type === 'video')) {
+              videoUrl = mediaItem.source;
+              thumbnailUrl = mediaItem.poster || mediaItem.thumbnail || '';
+              console.log('Vidéo trouvée dans les données brutes (media):', videoUrl);
+              break;
+            }
+          }
+        }
+        
+        // Si aucune vidéo n'a été trouvée, chercher récursivement dans les données brutes
+        if (!videoUrl) {
+          const foundVideoUrl = findVideoUrl(rawData);
+          if (foundVideoUrl) {
+            videoUrl = foundVideoUrl;
+          }
+        }
+      } catch (e) {
+        console.log('Erreur lors de l\'analyse des données brutes:', e);
+      }
+    }
+    // Recherche récursive dans l'objet adData pour trouver toute clé contenant "video"
+    else {
+      console.log('Recherche récursive de vidéo dans la structure des données...');
+      
+      function findVideoUrl(obj: any, path = ''): string | null {
+        if (!obj || typeof obj !== 'object') return null;
+        
+        // Rechercher des clés contenant "video" et "url"
+        for (const key in obj) {
+          const currentPath = path ? `${path}.${key}` : key;
+          
+          // Si la clé contient "video" et "url" et la valeur est une chaîne, c'est probablement une URL vidéo
+          if (
+            typeof obj[key] === 'string' && 
+            obj[key].length > 10 &&
+            (
+              (key.toLowerCase().includes('video') && key.toLowerCase().includes('url')) ||
+              (key.toLowerCase() === 'url' && currentPath.toLowerCase().includes('video')) ||
+              (key.toLowerCase() === 'source' && (
+                obj[key].includes('.mp4') || 
+                currentPath.toLowerCase().includes('video')
+              )) ||
+              (key.toLowerCase() === 'media_url' && (
+                obj[key].includes('.mp4') || 
+                obj['type'] === 'video' || 
+                obj['type'] === 'VIDEO'
+              ))
+            ) &&
+            (
+              obj[key].startsWith('http') || 
+              obj[key].startsWith('//')
+            )
+          ) {
+            console.log(`Vidéo trouvée par recherche récursive à ${currentPath}:`, obj[key]);
+            return obj[key];
+          }
+          
+          // Vérifier spécifiquement le type de média
+          if (key === 'type' && (obj[key] === 'video' || obj[key] === 'VIDEO') && obj['url']) {
+            console.log(`Vidéo trouvée par détection de type à ${currentPath}:`, obj['url']);
+            return obj['url'];
+          }
+          
+          // Vérifier les assets qui pourraient contenir des vidéos
+          if (key === 'asset' && typeof obj[key] === 'object' && obj[key] !== null) {
+            const asset = obj[key];
+            if (asset.url && (
+                asset.type === 'video' || 
+                asset.type === 'VIDEO' || 
+                asset.url.includes('.mp4')
+              )) {
+              console.log(`Vidéo trouvée dans un asset à ${currentPath}:`, asset.url);
+              return asset.url;
+            }
+          }
+          
+          // Recherche récursive
+          if (typeof obj[key] === 'object' && obj[key] !== null) {
+            const result = findVideoUrl(obj[key], currentPath);
+            if (result) return result;
+          }
+        }
+        
+        return null;
+      }
+      
+      const foundVideoUrl = findVideoUrl(adData);
+      if (foundVideoUrl) {
+        videoUrl = foundVideoUrl;
+      }
     }
     
     // Si on n'a pas trouvé de vidéo, vérifier s'il y a des images
@@ -273,6 +445,71 @@ async function extractFacebookAdVideo(url: string): Promise<ExtractedVideo> {
             adData
           }
         };
+      }
+    }
+    
+    // Normaliser l'URL de la vidéo (s'assurer qu'elle commence par http ou https)
+    if (videoUrl && videoUrl.startsWith('//')) {
+      videoUrl = 'https:' + videoUrl;
+      console.log('URL de vidéo normalisée:', videoUrl);
+    }
+    
+    // Vérifier que l'URL de la vidéo est valide
+    if (!videoUrl || !videoUrl.startsWith('http')) {
+      console.log('URL de vidéo invalide ou manquante:', videoUrl);
+      // Essayer une dernière recherche dans tout l'objet
+      const lastChanceUrl = findVideoUrl(adData);
+      if (lastChanceUrl) {
+        videoUrl = lastChanceUrl;
+        console.log('URL de vidéo trouvée en dernier recours:', videoUrl);
+      } else {
+        console.log('Impossible de trouver une URL de vidéo valide dans l\'annonce Facebook');
+        // Vérifier s'il y a au moins des images
+        if (adData.snapshot && adData.snapshot.images && adData.snapshot.images.length > 0) {
+          console.log('Annonce contenant uniquement des images détectée');
+          // Traiter comme une annonce avec images uniquement
+          // Cette partie est identique au code ci-dessus pour les images
+          let images = adData.snapshot.images.map(img => img.resizedImageUrl || img.originalImageUrl).filter(Boolean);
+          thumbnailUrl = images[0] || '';
+          return {
+            videoUrl: '',
+            thumbnailUrl,
+            title: adData.snapshot.title || adData.pageName || 'Annonce Facebook',
+            description: adData.snapshot.body?.text || adData.snapshot.linkDescription || '',
+            publishedAt: adData.startDateFormatted || new Date().toISOString(),
+            source: 'facebook',
+            originalUrl: url,
+            metadata: {
+              adId: adData.adArchiveID || adData.adArchiveId,
+              pageName: adData.pageName,
+              pageId: adData.pageId,
+              categories: adData.categories,
+              containsOnlyImages: true,
+              images,
+              adData
+            }
+          };
+        } else {
+          // Si aucune vidéo ou image n'a été trouvée
+          return {
+            videoUrl: '',
+            thumbnailUrl: '',
+            title: adData.pageName || 'Annonce Facebook',
+            description: adData.snapshot?.body?.text || '',
+            publishedAt: adData.startDateFormatted || new Date().toISOString(),
+            source: 'facebook',
+            originalUrl: url,
+            metadata: {
+              adId: adData.adArchiveID || adData.adArchiveId,
+              pageName: adData.pageName,
+              pageId: adData.pageId,
+              categories: adData.categories,
+              containsOnlyImages: false,
+              noMediaFound: true,
+              adData
+            }
+          };
+        }
       }
     }
     
