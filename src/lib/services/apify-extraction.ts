@@ -1,9 +1,16 @@
 import { ApifyClient } from 'apify-client';
 
+// Configuration Apify
+const APIFY_USER_ID = process.env.APIFY_USER_ID || 'dsFwuwfQ91TtdCjbZ';
+const APIFY_API_TOKEN = process.env.APIFY_API_TOKEN || '';
+
 // Initialiser le client Apify avec le token API
 const apifyClient = new ApifyClient({
-  token: process.env.APIFY_API_TOKEN || '',
+  token: APIFY_API_TOKEN,
 });
+
+// IDs des acteurs Apify
+const FACEBOOK_PAGE_SCRAPER_ID = 'JJghSZmShuco4j9gJ'; // Acteur personnalisé pour les pages Facebook
 
 // Types pour les résultats
 export interface ExtractedVideo {
@@ -22,7 +29,7 @@ export interface ExtractedVideo {
  * Détecte le type d'URL (Facebook ou Instagram) et utilise l'acteur Apify approprié
  */
 export async function extractVideoFromUrl(url: string): Promise<ExtractedVideo> {
-  if (!process.env.APIFY_API_TOKEN) {
+  if (!APIFY_API_TOKEN) {
     throw new Error('APIFY_API_TOKEN non configuré dans les variables d\'environnement');
   }
   
@@ -32,6 +39,9 @@ export async function extractVideoFromUrl(url: string): Promise<ExtractedVideo> 
   
   if (isFacebookUrl && url.includes('ads/library')) {
     return extractFacebookAdVideo(url);
+  } else if (isFacebookUrl && url.includes('page_internal')) {
+    // Utiliser l'acteur personnalisé pour les pages avec ?ref=page_internal
+    return extractFacebookPageVideo(url);
   } else if (isFacebookUrl) {
     return extractFacebookPostVideo(url);
   } else if (isInstagramUrl) {
@@ -42,13 +52,100 @@ export async function extractVideoFromUrl(url: string): Promise<ExtractedVideo> 
 }
 
 /**
+ * Récupère l'acteur Apify, en privilégiant les acteurs personnalisés si disponibles
+ */
+function getActor(actorId: string, fallbackActorId: string) {
+  // Essayer d'utiliser l'acteur personnalisé de l'utilisateur s'il existe
+  return apifyClient.actor(`${APIFY_USER_ID}/${actorId}`).call({})
+    .then(() => `${APIFY_USER_ID}/${actorId}`)
+    .catch(() => {
+      console.log(`Acteur personnalisé ${APIFY_USER_ID}/${actorId} non trouvé, utilisation de l'acteur par défaut ${fallbackActorId}`);
+      return fallbackActorId;
+    });
+}
+
+/**
+ * Extrait une vidéo d'une page Facebook en utilisant l'acteur personnalisé
+ */
+async function extractFacebookPageVideo(url: string): Promise<ExtractedVideo> {
+  console.log(`Extraction d'une vidéo depuis une page Facebook avec l'acteur personnalisé: ${url}`);
+
+  // Préparer l'entrée pour l'acteur
+  const input = {
+    startUrls: [{ url }],
+    resultsLimit: 99999,
+    activeStatus: ""
+  };
+
+  // Exécuter l'acteur spécifique pour les pages Facebook
+  const run = await apifyClient.actor(FACEBOOK_PAGE_SCRAPER_ID).call(input);
+
+  // Récupérer les résultats
+  const { items } = await apifyClient.dataset(run.defaultDatasetId).listItems();
+  
+  if (!items || items.length === 0) {
+    throw new Error('Aucune donnée extraite depuis la page Facebook');
+  }
+  
+  console.log('Données extraites depuis la page Facebook:', items[0]);
+  
+  // Trouver la première vidéo disponible
+  const pageData = items[0];
+  let videoUrl = '';
+  
+  // Adaptation selon la structure de données de l'acteur personnalisé
+  // Remarque: Nous devons adapter cette partie en fonction de la structure réelle des données
+  if (pageData.videos && pageData.videos.length > 0) {
+    videoUrl = pageData.videos[0].url;
+  } else if (pageData.posts) {
+    // Chercher dans les posts pour trouver une vidéo
+    for (const post of pageData.posts) {
+      if (post.videoUrl) {
+        videoUrl = post.videoUrl;
+        break;
+      }
+    }
+  }
+  
+  if (!videoUrl) {
+    throw new Error('Aucune vidéo trouvée dans cette page Facebook');
+  }
+  
+  // Télécharger la vidéo depuis l'URL obtenue
+  const videoResponse = await fetch(videoUrl);
+  if (!videoResponse.ok) {
+    throw new Error(`Erreur lors du téléchargement de la vidéo: ${videoResponse.status} ${videoResponse.statusText}`);
+  }
+  
+  // Construire le résultat (adapter les champs selon la structure des données)
+  return {
+    videoUrl,
+    thumbnailUrl: pageData.thumbnailUrl || pageData.pictureUrl || pageData.profilePicture,
+    title: pageData.name || pageData.title || 'Page Facebook',
+    description: pageData.about || pageData.description || '',
+    publishedAt: pageData.foundedDate || new Date().toISOString(),
+    source: 'facebook',
+    originalUrl: url,
+    metadata: {
+      pageId: pageData.id || pageData.pageId,
+      pageName: pageData.name,
+      pageData
+    }
+  };
+}
+
+/**
  * Extrait une vidéo de la bibliothèque d'annonces Facebook
  */
 async function extractFacebookAdVideo(url: string): Promise<ExtractedVideo> {
   console.log(`Extraction d'une vidéo depuis Facebook Ad Library: ${url}`);
 
+  // Déterminer l'acteur à utiliser (personnalisé ou par défaut)
+  const actorToUse = await getActor('facebook-ads-extractor', 'zuzka/facebook-ads-library-scraper')
+    .catch(() => 'zuzka/facebook-ads-library-scraper');
+
   // Exécuter l'acteur Apify pour Facebook Ads Library
-  const run = await apifyClient.actor("zuzka/facebook-ads-library-scraper").call({
+  const run = await apifyClient.actor(actorToUse).call({
     startUrls: [{ url }],
     maxRequestRetries: 5,
   });
@@ -103,8 +200,12 @@ async function extractFacebookAdVideo(url: string): Promise<ExtractedVideo> {
 async function extractFacebookPostVideo(url: string): Promise<ExtractedVideo> {
   console.log(`Extraction d'une vidéo depuis un post Facebook: ${url}`);
 
+  // Déterminer l'acteur à utiliser (personnalisé ou par défaut)
+  const actorToUse = await getActor('facebook-post-extractor', 'apify/facebook-pages-scraper')
+    .catch(() => 'apify/facebook-pages-scraper');
+
   // Exécuter l'acteur Apify pour Facebook Pages Scraper
-  const run = await apifyClient.actor("apify/facebook-pages-scraper").call({
+  const run = await apifyClient.actor(actorToUse).call({
     startUrls: [{ url }],
     maxPosts: 1,
     maxPostComments: 0,
@@ -157,8 +258,12 @@ async function extractFacebookPostVideo(url: string): Promise<ExtractedVideo> {
 async function extractInstagramVideo(url: string): Promise<ExtractedVideo> {
   console.log(`Extraction d'une vidéo depuis Instagram: ${url}`);
 
+  // Déterminer l'acteur à utiliser (personnalisé ou par défaut)
+  const actorToUse = await getActor('instagram-post-extractor', 'apify/instagram-scraper')
+    .catch(() => 'apify/instagram-scraper');
+
   // Exécuter l'acteur Apify pour Instagram Scraper
-  const run = await apifyClient.actor("apify/instagram-scraper").call({
+  const run = await apifyClient.actor(actorToUse).call({
     directUrls: [url],
     resultsType: 'posts',
     maxRequestRetries: 5,
