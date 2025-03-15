@@ -11,8 +11,8 @@ const apifyClient = new ApifyClient({
 
 // IDs des acteurs Apify
 const FACEBOOK_PAGE_SCRAPER_ID = 'JJghSZmShuco4j9gJ'; // Acteur personnalisé pour les pages Facebook
-// Changement de l'acteur pour Facebook Ad Library - utiliser un acteur disponible
-const FACEBOOK_AD_LIBRARY_SCRAPER_ID = 'curious_coder/facebook-ads-library-scraper'; // Nouvel acteur pour Ad Library
+// Acteur pour Facebook Ad Library - utiliser l'acteur qui fonctionne correctement
+const FACEBOOK_AD_LIBRARY_SCRAPER_ID = 'apify/facebook-ads-scraper'; // Acteur vérifié pour Ad Library (JJghSZmShuco4j9gJ)
 
 // Types pour les résultats
 export interface ExtractedVideo {
@@ -142,7 +142,7 @@ async function extractFacebookPageVideo(url: string): Promise<ExtractedVideo> {
 async function extractFacebookAdVideo(url: string): Promise<ExtractedVideo> {
   console.log(`Extraction d'une vidéo depuis Facebook Ad Library: ${url}`);
 
-  // Utiliser directement le nouvel acteur pour Facebook Ad Library
+  // Utiliser l'acteur vérifié pour Facebook Ad Library
   const actorToUse = FACEBOOK_AD_LIBRARY_SCRAPER_ID;
   console.log(`Utilisation de l'acteur: ${actorToUse} pour extraire des données de Facebook Ad Library`);
 
@@ -157,9 +157,10 @@ async function extractFacebookAdVideo(url: string): Promise<ExtractedVideo> {
     
     // Préparer les options de l'acteur pour Facebook Ad Library
     const input = {
-      searchUrls: [url],
-      scrapeAdDetails: true,
-      proxyConfiguration: {
+      startUrls: [{ url }],
+      resultsLimit: 99999,
+      activeStatus: "",
+      proxy: {
         useApifyProxy: true
       }
     };
@@ -175,45 +176,92 @@ async function extractFacebookAdVideo(url: string): Promise<ExtractedVideo> {
     }
     
     console.log(`Données extraites depuis Facebook Ad Library: ${items.length} annonces trouvées`);
+    console.log('Première annonce trouvée:', JSON.stringify(items[0]).slice(0, 500) + '...');
     
-    // Trouver l'annonce correspondant à l'ID
-    const adData = items.find(ad => ad.adId === adId) || items[0];
+    // Trouver l'annonce avec l'adArchiveID correspondant à l'ID
+    const adData = items.find(ad => ad.adArchiveID === adId || ad.adArchiveId === adId) || items[0];
     
     // Extraire l'URL de la vidéo
     let videoUrl = '';
+    let thumbnailUrl = '';
+    let title = '';
+    let description = '';
     
-    // Adapter en fonction de la structure de l'acteur curious_coder/facebook-ads-library-scraper
-    if (adData.videos && adData.videos.length > 0) {
-      videoUrl = adData.videos[0].url || adData.videos[0].src || '';
-    } else if (adData.media && adData.media.length > 0) {
-      const videoMedia = adData.media.find(m => m.type === 'VIDEO' || m.url.includes('.mp4'));
-      if (videoMedia) {
-        videoUrl = videoMedia.url || videoMedia.src || '';
+    // Structure basée sur l'acteur apify/facebook-ads-scraper
+    if (adData.snapshot && adData.snapshot.videos && adData.snapshot.videos.length > 0) {
+      // Extraction directe des vidéos disponibles
+      const video = adData.snapshot.videos[0];
+      videoUrl = video.videoHdUrl || video.videoSdUrl || '';
+      thumbnailUrl = video.videoPreviewImageUrl || '';
+    } 
+    // Vérifier les cartes qui contiennent souvent des vidéos
+    else if (adData.snapshot && adData.snapshot.cards && adData.snapshot.cards.length > 0) {
+      for (const card of adData.snapshot.cards) {
+        if (card.videoHdUrl || card.videoSdUrl) {
+          videoUrl = card.videoHdUrl || card.videoSdUrl || '';
+          thumbnailUrl = card.videoPreviewImageUrl || card.resizedImageUrl || '';
+          title = card.title || '';
+          description = card.body || '';
+          break;
+        }
+      }
+    }
+    // Vérifier les extraVideos
+    else if (adData.snapshot && adData.snapshot.extraVideos && adData.snapshot.extraVideos.length > 0) {
+      const video = adData.snapshot.extraVideos[0];
+      videoUrl = video.videoHdUrl || video.videoSdUrl || video.url || '';
+      thumbnailUrl = video.videoPreviewImageUrl || video.thumbnailUrl || '';
+    }
+    
+    // Si on n'a pas trouvé de vidéo, lever une erreur
+    if (!videoUrl) {
+      // Vérifier si des images sont disponibles (cas où l'annonce n'a pas de vidéo)
+      if (adData.snapshot && adData.snapshot.images && adData.snapshot.images.length > 0) {
+        throw new Error('Cette annonce Facebook ne contient pas de vidéo, seulement des images.');
+      } else {
+        throw new Error('Aucune vidéo trouvée dans cette annonce Facebook.');
       }
     }
     
-    if (!videoUrl) {
-      throw new Error('Aucune vidéo trouvée dans cette annonce Facebook');
+    // Si le titre et la description ne sont pas encore définis, les extraire de l'annonce
+    if (!title) {
+      title = adData.snapshot?.title || 'Annonce Facebook';
+    }
+    
+    if (!description) {
+      description = adData.snapshot?.body?.text || adData.snapshot?.linkDescription || '';
+    }
+    
+    // Obtenir la date de publication
+    const publishedAt = adData.startDateFormatted || new Date().toISOString();
+    
+    // Télécharger la vidéo depuis l'URL obtenue
+    console.log(`Téléchargement de la vidéo depuis: ${videoUrl}`);
+    const videoResponse = await fetch(videoUrl);
+    if (!videoResponse.ok) {
+      throw new Error(`Erreur lors du téléchargement de la vidéo: ${videoResponse.status} ${videoResponse.statusText}`);
     }
     
     // Construire le résultat
     return {
       videoUrl,
-      thumbnailUrl: adData.thumbnailUrl || (adData.media && adData.media.length > 0 ? adData.media[0].url : ''),
-      title: adData.title || adData.message || 'Annonce Facebook',
-      description: adData.message || adData.description || '',
-      publishedAt: adData.startDate || adData.createdTime || new Date().toISOString(),
+      thumbnailUrl,
+      title,
+      description,
+      publishedAt,
       source: 'facebook',
       originalUrl: url,
       metadata: {
-        adId: adData.adId || adData.id,
-        advertiserName: adData.advertiserName || adData.pageName,
-        adLibraryData: adData
+        adId: adData.adArchiveID || adData.adArchiveId,
+        pageName: adData.pageName,
+        pageId: adData.pageId,
+        categories: adData.categories,
+        adData
       }
     };
   } catch (error) {
-    console.error('Erreur lors de l\'extraction de Facebook Ad Library:', error);
-    throw new Error(`Erreur lors de l'extraction de Facebook Ad Library: ${(error as Error).message}`);
+    console.error('Erreur lors de l\'extraction de la vidéo Facebook Ad:', error);
+    throw error;
   }
 }
 
