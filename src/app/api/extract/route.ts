@@ -51,12 +51,21 @@ export async function POST(request: NextRequest) {
     try {
       console.log(`Extraction de la vidéo depuis ${source} en utilisant Apify...`);
       
+      // Ajuster la source si nécessaire pour Facebook Ad Library
+      const isFacebookAdLibrary = url.includes('facebook.com') && url.includes('ads/library');
+      const actualSource = isFacebookAdLibrary ? 'facebook' : source;
+      
       // Utiliser le service Apify pour extraire la vidéo
       const extractedVideo = await extractVideoFromUrl(url);
       console.log('Vidéo extraite avec succès:', extractedVideo.videoUrl);
       
+      // Vérifier si nous avons une URL vidéo valide
+      if (!extractedVideo.videoUrl) {
+        throw new Error('Aucune URL vidéo trouvée dans le contenu extrait');
+      }
+      
       // Télécharger la vidéo depuis l'URL extraite
-      console.log('Téléchargement de la vidéo...');
+      console.log('Téléchargement de la vidéo depuis:', extractedVideo.videoUrl);
       const videoResponse = await fetch(extractedVideo.videoUrl);
       
       if (!videoResponse.ok) {
@@ -67,9 +76,14 @@ export async function POST(request: NextRequest) {
       const videoBlob = await videoResponse.blob();
       
       // Générer un identifiant unique et un nom de fichier
-      const fileId = uuidv4();
+      const fileId = extractedVideo.metadata?.id || uuidv4();
       const fileExtension = 'mp4'; // Forcer l'extension mp4 pour la compatibilité
       const fileName = `${fileId}.${fileExtension}`;
+      
+      // Vérifier que nous avons bien un blob vidéo
+      if (videoBlob.size === 0) {
+        throw new Error('Le fichier vidéo téléchargé est vide');
+      }
       
       // Convertir le blob en File
       const videoFile = new File([videoBlob], fileName, { 
@@ -88,13 +102,17 @@ export async function POST(request: NextRequest) {
         format: `${extractedVideo.metadata?.width || 'unknown'}x${extractedVideo.metadata?.height || 'unknown'}`,
         size: `${(videoBlob.size / (1024 * 1024)).toFixed(1)} MB`,
         duration: extractedVideo.duration || '00:00:30', // Durée par défaut si non disponible
-        originalName: fileName,
-        title: extractedVideo.title,
-        description: extractedVideo.description,
+        originalName: extractedVideo.title || fileName,
+        title: extractedVideo.title || `Video from ${actualSource}`,
+        description: extractedVideo.description || '',
         thumbnailUrl: extractedVideo.thumbnailUrl,
         source: extractedVideo.source,
         originalUrl: extractedVideo.originalUrl,
-        metadata: extractedVideo.metadata
+        metadata: {
+          ...extractedVideo.metadata,
+          extractionMethod: 'apify',
+          extractionTime: new Date().toISOString()
+        }
       };
       
       console.log('Extraction complète:', videoMetadata);
