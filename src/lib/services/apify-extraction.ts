@@ -628,28 +628,45 @@ async function extractInstagramVideo(url: string): Promise<ExtractedVideo> {
 
     console.log(`Utilisation de l'acteur: ${actorToUse} pour extraire des données d'Instagram`);
 
-    // Configuration améliorée pour l'acteur Instagram
+    // Configuration avancée pour l'acteur Instagram
     const runInput = {
       directUrls: [url],
       resultsType: 'posts',
-      maxRequestRetries: 10, // Augmenter le nombre de tentatives
-      maxRequestsPerMinute: 5, // Limiter le taux de requêtes pour éviter le blocage
-      maxConcurrency: 1, // Réduire la concurrence
-      maxSessionRotations: 3, // Permettre la rotation des sessions
+      addParentData: true,
+      maxRequestRetries: 15,  // Augmenter le nombre de tentatives
+      maxRequestsPerMinute: 2, // Limiter davantage pour éviter le blocage
+      maxConcurrency: 1, // Un seul thread à la fois
+      maxSessionRotations: 5, // Augmenter les rotations de sessions
       loginCookies: [], // Par défaut, pas de cookies de connexion
       proxy: {
-        useApifyProxy: true, // Utiliser le proxy Apify
-        apifyProxyGroups: ['RESIDENTIAL'], // Utiliser des proxys résidentiels pour de meilleures chances
+        useApifyProxy: true, 
+        apifyProxyGroups: ['RESIDENTIAL'], // Utiliser exclusivement des proxys résidentiels
+        countryCode: 'FR' // Utiliser des proxys français pour une meilleure chance
       },
-      // Paramètres pour aider à éviter les blocages par Instagram
+      // Paramètres pour éviter les blocages par Instagram
       forceEnglishLocale: true,
-      verboseLog: true, // Activer les logs détaillés pour le débogage
-      timeout: 60000, // Timeout de 60 secondes
+      verboseLog: true,
+      debugLog: true,
+      timeout: 120000, // Timeout de 2 minutes pour chaque requête
+      // Ajouter des en-têtes HTTP réalistes
+      additionalHttpHeaders: {
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+        'Accept-Language': 'fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+        'Sec-Ch-Ua': '"Not A(Brand";v="99", "Google Chrome";v="121", "Chromium";v="121"',
+        'Sec-Ch-Ua-Mobile': '?0',
+        'Sec-Ch-Ua-Platform': '"macOS"'
+      }
     };
 
     // Exécuter l'acteur Apify pour Instagram Scraper avec un timeout plus long
-    console.log('Démarrage de l\'acteur Instagram avec les paramètres:', JSON.stringify(runInput, null, 2));
-    const run = await apifyClient.actor(actorToUse).call(runInput, { timeoutSecs: 120 });
+    console.log('Démarrage de l\'acteur Instagram avec les paramètres optimisés:', JSON.stringify(runInput, null, 2));
+    
+    // Utiliser un timeout plus long pour l'exécution complète
+    const run = await apifyClient.actor(actorToUse).call(runInput, { 
+      timeoutSecs: 180,  // 3 minutes de timeout pour l'exécution complète
+      waitSecs: 120      // Attendre jusqu'à 2 minutes pour les résultats
+    });
 
     // Attendre un peu plus longtemps pour les résultats
     console.log('Récupération des résultats de l\'acteur Instagram...');
@@ -657,47 +674,67 @@ async function extractInstagramVideo(url: string): Promise<ExtractedVideo> {
     
     if (!items || items.length === 0) {
       console.error('Aucune donnée extraite depuis Instagram');
-      throw new Error('Aucune donnée extraite depuis Instagram. Instagram limite peut-être les extractions.');
+      throw new Error('Aucune donnée extraite depuis Instagram. Instagram limite peut-être les extractions. Veuillez réessayer plus tard ou utiliser une URL différente.');
     }
     
     // Log détaillé pour le débogage
     console.log(`Données extraites depuis Instagram: ${items.length} éléments trouvés`);
-    console.log('Premier élément trouvé:', JSON.stringify(items[0]).slice(0, 500) + '...');
+    console.log('Premier élément trouvé (aperçu):', JSON.stringify(items[0]).slice(0, 500) + '...');
     
     const postData = items[0];
     
-    // Vérification plus robuste des données de la vidéo
-    if (!postData.videoUrl && !postData.video_url) {
-      // Rechercher la vidéo de manière plus approfondie
-      let videoUrl = null;
-      
-      // Vérifier différentes propriétés qui pourraient contenir l'URL de la vidéo
-      if (postData.media && postData.media.video_versions && postData.media.video_versions.length > 0) {
-        videoUrl = postData.media.video_versions[0].url;
-      } else if (postData.videos && postData.videos.length > 0) {
-        videoUrl = postData.videos[0].url || postData.videos[0].video_url;
-      } else if (postData.carousel_media) {
-        // Parcourir les médias du carousel pour trouver une vidéo
-        for (const media of postData.carousel_media) {
-          if (media.video_versions && media.video_versions.length > 0) {
-            videoUrl = media.video_versions[0].url;
-            break;
-          }
+    // Recherche plus exhaustive pour trouver l'URL vidéo
+    let videoUrl = null;
+    
+    // 1. Vérifier les propriétés directes standard
+    if (postData.videoUrl || postData.video_url) {
+      videoUrl = postData.videoUrl || postData.video_url;
+      console.log('URL vidéo trouvée dans propriété directe:', videoUrl);
+    }
+    // 2. Vérifier dans les media video_versions (format API Instagram)
+    else if (postData.media && postData.media.video_versions && postData.media.video_versions.length > 0) {
+      // Prendre la version avec la meilleure résolution
+      videoUrl = postData.media.video_versions.sort((a, b) => b.width - a.width)[0].url;
+      console.log('URL vidéo trouvée dans media.video_versions:', videoUrl);
+    }
+    // 3. Vérifier dans l'array videos si disponible
+    else if (postData.videos && postData.videos.length > 0) {
+      const videoItem = postData.videos[0];
+      videoUrl = videoItem.url || videoItem.video_url;
+      console.log('URL vidéo trouvée dans videos array:', videoUrl);
+    }
+    // 4. Vérifier les médias carousel (Instagram reels/stories)
+    else if (postData.carousel_media || postData.carousel) {
+      const carouselMedia = postData.carousel_media || postData.carousel;
+      // Parcourir tous les médias du carousel à la recherche d'une vidéo
+      for (const media of carouselMedia) {
+        if (media.video_versions && media.video_versions.length > 0) {
+          videoUrl = media.video_versions.sort((a, b) => b.width - a.width)[0].url;
+          console.log('URL vidéo trouvée dans carousel_media:', videoUrl);
+          break;
         }
-      } else if (typeof postData === 'object') {
-        // Recherche récursive dans l'objet pour trouver une URL vidéo
-        videoUrl = findVideoUrlRecursive(postData);
+        if (media.videos && media.videos.length > 0) {
+          videoUrl = media.videos[0].url;
+          console.log('URL vidéo trouvée dans carousel_media.videos:', videoUrl);
+          break;
+        }
       }
-      
-      if (!videoUrl) {
-        console.error('Aucune vidéo trouvée dans ce post Instagram');
-        throw new Error('Le post Instagram ne contient pas de vidéo ou Instagram limite l\'accès aux vidéos');
+    }
+    // 5. Recherche récursive en dernier recours
+    else {
+      console.log('Recherche récursive d\'URL vidéo dans les données Instagram...');
+      videoUrl = findVideoUrlRecursive(postData);
+      if (videoUrl) {
+        console.log('URL vidéo trouvée par recherche récursive:', videoUrl);
       }
-      
-      postData.videoUrl = videoUrl;
     }
     
-    const videoUrl = postData.videoUrl || postData.video_url;
+    // Si aucune URL vidéo n'a été trouvée, lever une erreur claire
+    if (!videoUrl) {
+      console.error('Aucune vidéo trouvée dans ce post Instagram');
+      throw new Error('Le post Instagram ne contient pas de vidéo ou Instagram limite l\'accès aux vidéos. Veuillez réessayer plus tard ou utiliser une URL différente.');
+    }
+    
     console.log(`URL vidéo Instagram trouvée: ${videoUrl}`);
     
     // Vérifier que l'URL vidéo est valide
@@ -705,15 +742,16 @@ async function extractInstagramVideo(url: string): Promise<ExtractedVideo> {
       throw new Error(`URL vidéo Instagram invalide: ${videoUrl}`);
     }
     
-    // Télécharger la vidéo depuis l'URL obtenue avec un timeout plus long
+    // Télécharger la vidéo depuis l'URL obtenue avec un timeout plus long et des en-têtes réalistes
     console.log(`Téléchargement de la vidéo Instagram depuis: ${videoUrl}`);
     const videoResponse = await fetch(videoUrl, { 
-      timeout: 30000, // 30 secondes de timeout pour le téléchargement
+      timeout: 60000, // 60 secondes de timeout pour le téléchargement
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.110 Safari/537.36',
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
         'Accept': 'video/mp4,video/*;q=0.9,*/*;q=0.8',
-        'Accept-Language': 'en-US,en;q=0.5',
-        'Referer': 'https://www.instagram.com/'
+        'Accept-Language': 'fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7',
+        'Referer': 'https://www.instagram.com/',
+        'Origin': 'https://www.instagram.com'
       }
     });
     
@@ -721,33 +759,54 @@ async function extractInstagramVideo(url: string): Promise<ExtractedVideo> {
       throw new Error(`Erreur lors du téléchargement de la vidéo Instagram: ${videoResponse.status} ${videoResponse.statusText}`);
     }
     
+    // Extraire les métadonnées
+    const thumbnailUrl = postData.displayUrl || postData.display_url || postData.thumbnail_url || postData.thumbnailUrl || 
+                       (postData.image_versions2?.candidates ? postData.image_versions2.candidates[0].url : undefined);
+    
+    const caption = postData.caption || (postData.edge_media_to_caption?.edges?.length ? postData.edge_media_to_caption.edges[0].node.text : '');
+    const timestamp = postData.timestamp || postData.taken_at || postData.taken_at_timestamp || new Date().toISOString();
+    
     // Construire le résultat
     return {
       videoUrl,
-      thumbnailUrl: postData.displayUrl || postData.display_url || postData.thumbnail_url || postData.thumbnailUrl,
-      title: postData.caption ? (postData.caption.slice(0, 50) + (postData.caption.length > 50 ? '...' : '')) : 'Post Instagram',
-      description: postData.caption || '',
-      publishedAt: postData.timestamp || postData.taken_at || new Date().toISOString(),
+      thumbnailUrl,
+      title: caption ? (caption.slice(0, 50) + (caption.length > 50 ? '...' : '')) : 'Post Instagram',
+      description: caption || '',
+      publishedAt: typeof timestamp === 'number' ? new Date(timestamp * 1000).toISOString() : timestamp,
       source: 'instagram',
       originalUrl: url,
       metadata: {
         postId: postData.id,
-        authorName: postData.ownerUsername || postData.owner?.username || postData.user?.username,
-        postData
+        authorName: postData.ownerUsername || postData.owner?.username || postData.user?.username || '',
+        likesCount: postData.likesCount || postData.like_count || postData.edge_media_preview_like?.count,
+        commentsCount: postData.commentsCount || postData.comment_count || postData.edge_media_to_comment?.count,
+        postData: {
+          id: postData.id,
+          caption,
+          timestamp,
+          ownerUsername: postData.ownerUsername || postData.owner?.username || postData.user?.username || '',
+          shortcode: postData.shortcode || postData.code,
+        }
       }
     };
   } catch (error) {
     // Gestion améliorée des erreurs
     console.error('Erreur lors de l\'extraction Instagram:', error);
     
-    // Si l'erreur est liée à l'analyse JSON, ajoutez des informations supplémentaires
+    // Erreurs liées à l'API Instagram
+    if (error.message?.includes('IP-BLOCKED') || 
+        error.message?.includes('Your Request Couldn\'t be Processed')) {
+      throw new Error(`Instagram a détecté l'extraction automatisée et l'a bloquée. Veuillez réessayer plus tard avec une autre URL. Détails: Limitation par Instagram`);
+    }
+    
+    // Si l'erreur est liée à l'analyse JSON
     if (error instanceof SyntaxError && error.message.includes('Unexpected token')) {
-      throw new Error(`Instagram a bloqué l'extraction de la vidéo. Veuillez réessayer plus tard ou utiliser une autre URL. Détails: ${error.message}`);
+      throw new Error(`Instagram a bloqué l'extraction de la vidéo. Veuillez réessayer plus tard ou utiliser une autre URL. Erreur: Réponse non valide`);
     }
     
     // Pour les erreurs de timeout
-    if (error.message.includes('timeout') || error.name === 'AbortError' || error.code === 'ETIMEDOUT') {
-      throw new Error(`Le délai d'attente pour l'extraction de la vidéo Instagram a été dépassé. Instagram limite peut-être les extractions. Veuillez réessayer plus tard.`);
+    if (error.message?.includes('timeout') || error.name === 'AbortError' || error.code === 'ETIMEDOUT') {
+      throw new Error(`Le délai d'attente pour l'extraction de la vidéo Instagram a été dépassé. Instagram limite les extractions. Veuillez réessayer plus tard.`);
     }
     
     // Renvoyer l'erreur avec plus de contexte
