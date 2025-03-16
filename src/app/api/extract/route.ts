@@ -6,7 +6,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { extractVideoFromUrl } from '@/lib/services/apify-extraction';
 import { saveVideoFile } from '@/lib/utils/video';
 
-export const maxDuration = 120; // Augmenter à 2 minutes pour les extractions qui peuvent prendre du temps
+export const maxDuration = 60; // Maximum 60 secondes pour compatibilité avec Vercel Hobby plan
 export const dynamic = 'force-dynamic'; // Force dynamic mode to avoid caching
 
 export async function POST(request: NextRequest) {
