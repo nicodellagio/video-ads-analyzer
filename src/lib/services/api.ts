@@ -74,22 +74,33 @@ export async function analyzeContent(transcription: any, videoMetadata: any) {
 }
 
 // Function for report export
-export async function exportReport(transcription: any, analysis: any, format: 'pdf' | 'gdocs') {
+export async function exportReport(transcription: any, analysis: any, format: 'pdf' | 'gdocs', videoMetadata?: any) {
   try {
     const response = await fetch('/api/export', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ transcription, analysis, format }),
+      body: JSON.stringify({ transcription, analysis, format, videoMetadata }),
     });
 
     if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(errorData.error || 'Error during export');
+      // Essayer d'obtenir les détails de l'erreur du serveur
+      try {
+        const errorData = await response.json();
+        throw new Error(errorData.error || `Erreur lors de l'export (${response.status}: ${response.statusText})`);
+      } catch (jsonError) {
+        // Si la réponse n'est pas du JSON valide, utiliser le statut HTTP
+        throw new Error(`Erreur lors de l'export: le serveur a retourné ${response.status} ${response.statusText}`);
+      }
     }
 
-    return await response.json();
+    // Vérifier que la réponse est du JSON valide
+    try {
+      return await response.json();
+    } catch (jsonError) {
+      throw new Error("La réponse du serveur n'est pas au format JSON valide");
+    }
   } catch (error) {
     console.error('Export error:', error);
     throw error;

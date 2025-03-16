@@ -122,6 +122,8 @@ export default function VideoAdAnalysis() {
   const [selectedLanguage, setSelectedLanguage] = useState<LanguageCode | null>(null);
   const [realMetadata, setRealMetadata] = useState<{ duration: number; format: string; size: string }>({ duration: 0, format: '', size: '' });
   const [isExporting, setIsExporting] = useState<boolean>(false);
+  const [isPdfExporting, setIsPdfExporting] = useState<boolean>(false);
+  const [isGdocsExporting, setIsGdocsExporting] = useState<boolean>(false);
   const [googleAuthMessage, setGoogleAuthMessage] = useState<string | null>(null);
   
   // Video playback states
@@ -302,15 +304,29 @@ export default function VideoAdAnalysis() {
     try {
       setShowError(true);
       setIsExporting(true);
-      setGoogleAuthMessage(null);
       
-      if (format === 'gdocs') {
+      // Mettre à jour l'état spécifique au format
+      if (format === 'pdf') {
+        setIsPdfExporting(true);
+      } else if (format === 'gdocs') {
+        setIsGdocsExporting(true);
         setGoogleAuthMessage("Préparation de l'export vers Google Docs...");
       }
       
       const response = await generateExport(format);
       
+      // Vérifier si la réponse est une erreur ou manquante
+      if (!response) {
+        throw new Error("Échec de l'exportation : réponse vide");
+      }
+      
       if (format === 'pdf') {
+        // Vérifier que la réponse est bien une URL de données PDF
+        if (typeof response !== 'string' || !response.startsWith('data:application/pdf')) {
+          console.error('Format de réponse PDF invalide:', response);
+          throw new Error("Le format du PDF généré est invalide");
+        }
+        
         // Télécharger le PDF directement
         const link = document.createElement('a');
         link.href = response;
@@ -344,10 +360,12 @@ export default function VideoAdAnalysis() {
       }
     } catch (error) {
       console.error('Erreur lors de l\'exportation:', error);
-      setGoogleAuthMessage("An error occurred while exporting. Please try again.");
+      setGoogleAuthMessage(error instanceof Error ? error.message : "Une erreur s'est produite lors de l'exportation. Veuillez réessayer.");
       // L'erreur est déjà gérée dans le contexte
     } finally {
       setIsExporting(false);
+      setIsPdfExporting(false);
+      setIsGdocsExporting(false);
     }
   }
 
@@ -1121,16 +1139,36 @@ export default function VideoAdAnalysis() {
                     <Button
                       onClick={() => handleExport('pdf')}
                       className="bg-black hover:bg-gray-900 text-white rounded-full flex-1"
+                      disabled={isPdfExporting}
                     >
-                      <Download className="h-4 w-4 mr-2" />
-                      Export as PDF
+                      {isPdfExporting ? (
+                        <>
+                          <span className="animate-spin h-4 w-4 mr-2 border-2 border-white border-t-transparent rounded-full" />
+                          Generating PDF...
+                        </>
+                      ) : (
+                        <>
+                          <Download className="h-4 w-4 mr-2" />
+                          Export as PDF
+                        </>
+                      )}
                     </Button>
                     <Button
                       onClick={() => handleExport('gdocs')}
                       className="bg-blue-600 hover:bg-blue-700 text-white rounded-full flex-1"
+                      disabled={isGdocsExporting}
                     >
-                      <ExternalLink className="h-4 w-4 mr-2" />
-                      Export to Google Docs
+                      {isGdocsExporting ? (
+                        <>
+                          <span className="animate-spin h-4 w-4 mr-2 border-2 border-white border-t-transparent rounded-full" />
+                          Exporting to Google Docs...
+                        </>
+                      ) : (
+                        <>
+                          <ExternalLink className="h-4 w-4 mr-2" />
+                          Export to Google Docs
+                        </>
+                      )}
                     </Button>
                   </div>
                 </CardContent>
