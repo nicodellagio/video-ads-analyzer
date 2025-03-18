@@ -132,6 +132,7 @@ export default function VideoAdAnalysis() {
   const [currentTime, setCurrentTime] = useState<number>(0);
   const [duration, setDuration] = useState<number>(0);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const [isDragging, setIsDragging] = useState(false);
 
   // Mettre à jour la langue sélectionnée lorsque la transcription est disponible
   useEffect(() => {
@@ -289,6 +290,33 @@ export default function VideoAdAnalysis() {
     const file = e.target.files?.[0]
     if (file) {
       setUploadedFile(file)
+    }
+  }
+
+  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+  }
+
+  const handleDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+  }
+
+  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+    
+    const files = e.dataTransfer.files;
+    if (files && files.length > 0) {
+      const file = files[0];
+      // Vérifier que c'est bien une vidéo
+      if (file.type.startsWith('video/')) {
+        setUploadedFile(file);
+      }
     }
   }
 
@@ -682,7 +710,12 @@ export default function VideoAdAnalysis() {
                         <label htmlFor="video-upload" className="block text-sm font-medium mb-1 text-gray-700">
                           Upload a video file
                         </label>
-                        <div className="border-2 border-dashed border-gray-200 rounded-lg p-6 text-center hover:border-black transition-colors cursor-pointer bg-gray-50">
+                        <div 
+                          className={`border-2 border-dashed ${isDragging ? 'border-black bg-gray-100' : 'border-gray-200'} rounded-lg p-6 text-center hover:border-black transition-colors cursor-pointer bg-gray-50`}
+                          onDragOver={handleDragOver}
+                          onDragLeave={handleDragLeave}
+                          onDrop={handleDrop}
+                        >
                           <Input
                             id="video-upload"
                             type="file"
