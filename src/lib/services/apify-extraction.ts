@@ -723,6 +723,9 @@ async function extractFacebookPostVideo(url: string): Promise<ExtractedVideo> {
   
   const postData = items[0];
   
+  // Log the entire postData object to understand its structure
+  console.log('Structure complète de postData reçue d\'Apify:', JSON.stringify(postData, null, 2));
+  
   // Vérifier si le post contient une vidéo
   if (!postData.videoUrl) {
     throw new Error('Aucune vidéo trouvée dans ce post Facebook');
@@ -787,161 +790,136 @@ async function extractInstagramVideo(url: string): Promise<ExtractedVideo> {
   }
 }
 
-// Fonction utilitaire pour rechercher récursivement une URL de vidéo
-function findVideoUrlRecursive(obj: any, path = ''): string | null {
-  if (!obj || typeof obj !== 'object') return null;
-  
-  for (const key in obj) {
-    const currentPath = path ? `${path}.${key}` : key;
-    
-    // Rechercher les clés qui pourraient contenir des URL vidéo
-    if (
-      typeof obj[key] === 'string' && 
-      obj[key].length > 10 &&
-      (
-        (key.toLowerCase().includes('video') && key.toLowerCase().includes('url')) ||
-        (key.toLowerCase() === 'url' && currentPath.toLowerCase().includes('video')) ||
-        (key.toLowerCase() === 'src' && obj[key].includes('.mp4'))
-      ) && 
-      obj[key].startsWith('http')
-    ) {
-      console.log(`URL vidéo Instagram trouvée dans ${currentPath}:`, obj[key]);
-      return obj[key];
-    }
-    
-    // Recherche récursive
-    if (typeof obj[key] === 'object' && obj[key] !== null) {
-      const result = findVideoUrlRecursive(obj[key], currentPath);
-      if (result) return result;
-    }
-  }
-  
-  return null;
-}
-
 /**
  * Version améliorée d'extraction Instagram avec plusieurs tentatives et rotation de proxys
  */
 async function extractInstagramVideoWithRetry(url: string, maxRetries = 5): Promise<ExtractedVideo> {
   let lastError: any;
-  
+  const actorToUse = 'tK6UBWwvP7CwokYEK'; // Utiliser l'ID de l'acteur fourni
+
   // Plusieurs tentatives avec différentes configurations
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     // Sélectionner une configuration de proxy optimale
     const { proxy, index } = selectProxyConfiguration();
-    console.log(`Tentative ${attempt+1}/${maxRetries} d'extraction Instagram avec proxy ${proxy.countryCode || 'DATACENTER/SMART'}`);
-    
+    console.log(`Tentative ${attempt + 1}/${maxRetries} d'extraction Instagram avec l'acteur ${actorToUse} et proxy ${proxy.countryCode || 'DATACENTER/SMART'}`);
+
     try {
       // Attendre de manière exponentielle entre les tentatives
       if (attempt > 0) {
         const delayMs = Math.min(30000, 2000 * Math.pow(2, attempt)); // 2s, 4s, 8s, 16s...
-        console.log(`Attente de ${delayMs/1000}s avant la prochaine tentative...`);
+        console.log(`Attente de ${delayMs / 1000}s avant la prochaine tentative...`);
         await new Promise(resolve => setTimeout(resolve, delayMs));
       }
-      
-      // Déterminer l'acteur à utiliser 
-      const actorToUse = await getActor('instagram-post-extractor', 'apify/instagram-scraper')
-        .catch(() => 'apify/instagram-scraper');
-      
+
       console.log(`Utilisation de l'acteur: ${actorToUse} avec proxy ${proxy.countryCode || 'DATACENTER/SMART'}`);
-      
-      // Configuration de base avec paramètres optimisés
+
+      // Configuration d'entrée pour tK6UBWwvP7CwokYEK
       const runInput = {
-        directUrls: [url],
-        resultsType: 'posts',
-        addParentData: true,
-        maxRequestRetries: 20, // Augmenté pour plus de persistance
-        maxRequestsPerMinute: Math.max(1, 2 - attempt*0.5), // Stratégie adaptative: plus lent après chaque échec
-        maxConcurrency: 1,
-        maxSessionRotations: 8, // Augmenté pour plus de rotations
-        loginCookies: [],
-        proxy: proxy, // Utiliser la configuration de proxy sélectionnée
-        forceEnglishLocale: true,
-        verboseLog: true,
-        debugLog: true,
-        timeout: 150000 + (attempt * 30000), // Timeout plus long avec marges
-        // En-têtes HTTP aléatoires pour simuler différents navigateurs
-        additionalHttpHeaders: getRandomHeaders(attempt) // Utiliser la version améliorée
+        reelLinks: [url], // Utiliser reelLinks au lieu de startUrls
+        // Adapter la configuration du proxy
+        proxyConfiguration: { 
+          ...proxy // Passer directement l'objet proxy sélectionné
+        },
+        verboseLog: false // Ajouté basé sur l'exemple
       };
-      
-      // Exécuter l'acteur avec timeout adaptatif
-      const run = await apifyClient.actor(actorToUse).call(runInput, {
-        timeoutSecs: 180 + (attempt * 60), // 3min, puis 4min, etc.
-        waitSecs: 120 + (attempt * 30),    // 2min, puis 2min30, etc.
-      });
-      
-      // Récupérer les résultats
+
+      // Exécuter l'acteur
+      const run = await apifyClient.actor(actorToUse).call(runInput);
+
+      // Récupérer les résultats du Dataset
       const { items } = await apifyClient.dataset(run.defaultDatasetId).listItems();
-      
-      if (!items || items.length === 0) {
-        throw new Error('Aucune donnée extraite depuis Instagram');
+
+      // Log temporaire pour voir la structure de sortie exacte
+      if (items && items.length > 0) {
+        console.log('Structure de sortie de l\'acteur tK6UBWwvP7CwokYEK:', JSON.stringify(items[0], null, 2));
+      }
+
+      // --- Traitement de la sortie (hypothèse basée sur les acteurs précédents) ---
+      // À AJUSTER APRÈS AVOIR VU LE LOG CI-DESSUS
+      let videoUrl: string | null = null;
+      let thumbnailUrl: string | null = null;
+      let originalUrl: string | null = url;
+
+      if (items && items.length > 0) {
+        const item = items[0];
+        originalUrl = item.inputUrl || item.sourceUrl || url;
+        thumbnailUrl = item.thumbnailUrl || item.displayUrl || null;
+        
+        // Essayer de trouver l'URL de la vidéo
+        videoUrl = item.videoUrl || item.downloadUrl || item.url || null;
+        
+        // Si c'est un lien KVS comme l'acteur précédent, l'utiliser directement
+        if (item.downloadUrl && item.downloadUrl.includes('key-value-stores')) {
+          console.log(`Utilisation de l'URL Apify Key-Value Store comme videoUrl finale: ${item.downloadUrl}`);
+          videoUrl = item.downloadUrl;
+        } else if (item.videoUrl) {
+          console.log(`URL vidéo trouvée directement: ${item.videoUrl}`);
+        } else {
+            // Log si aucune URL vidéo claire n'est trouvée dans les champs attendus
+             console.warn('Aucun champ vidéo attendu (videoUrl, downloadUrl) trouvé dans la sortie de l\'acteur. Vérifiez la structure logguée.');
+             // Tentative de recherche générique (moins fiable)
+             for (const key in item) {
+                 if (typeof item[key] === 'string' && item[key].includes('.mp4') && item[key].startsWith('http')) {
+                     console.log(`URL vidéo potentielle trouvée dans le champ '${key}': ${item[key]}`);
+                     videoUrl = item[key];
+                     break;
+                 }
+             }
+        }
+        
+        // Gérer le cas où l'acteur renvoie une erreur spécifique
+        if (item.error || item.errorInfo) {
+          throw new Error(`L'acteur ${actorToUse} a retourné une erreur: ${item.error || item.errorInfo}`);
+        }
       }
       
-      // Traitement du résultat comme dans la fonction originale
-      const postData = items[0];
-      // Recherche d'URL vidéo comme dans la fonction originale
-      let videoUrl = extractVideoUrlFromPostData(postData);
-      
+      // Si aucune URL vidéo n'a été trouvée après toutes les tentatives
       if (!videoUrl) {
-        throw new Error('Le post Instagram ne contient pas de vidéo');
+         throw new Error(`Aucune URL vidéo trouvée dans la réponse de l'acteur ${actorToUse}`);
       }
-      
-      // Téléchargement de la vidéo
-      const videoResponse = await fetchWithRetry(videoUrl, 3);
-      
-      // Extraire les métadonnées comme dans la fonction originale
-      const thumbnailUrl = postData.displayUrl || postData.display_url || postData.thumbnail_url || postData.thumbnailUrl || 
-                         (postData.image_versions2?.candidates ? postData.image_versions2.candidates[0].url : undefined);
-      
-      const caption = postData.caption || (postData.edge_media_to_caption?.edges?.length ? postData.edge_media_to_caption.edges[0].node.text : '');
-      const timestamp = postData.timestamp || postData.taken_at || postData.taken_at_timestamp || new Date().toISOString();
-      
+      // --- Fin du traitement de la sortie ---
+
+      // L'acteur ne fournit pas beaucoup de métadonnées, on simplifie
+      const title = 'Vidéo Instagram'; // Titre générique
+      const description = ''; // Description vide
+      const publishedAt = new Date().toISOString(); // Date actuelle
+
       // Mise à jour des statistiques - succès
       updateProxyStats(index, true);
-      
+
       // Construire et retourner le résultat
       return {
-        videoUrl,
-        thumbnailUrl,
-        title: caption ? (caption.slice(0, 50) + (caption.length > 50 ? '...' : '')) : 'Post Instagram',
-        description: caption || '',
-        publishedAt: typeof timestamp === 'number' ? new Date(timestamp * 1000).toISOString() : timestamp,
+        videoUrl, 
+        thumbnailUrl: thumbnailUrl || '', // Assurer que ce n'est pas null
+        title,
+        description,
+        publishedAt,
         source: 'instagram',
-        originalUrl: url,
+        originalUrl: originalUrl || url, // Assurer que ce n'est pas null
         metadata: {
-          postId: postData.id,
-          authorName: postData.ownerUsername || postData.owner?.username || postData.user?.username || '',
-          likesCount: postData.likesCount || postData.like_count || postData.edge_media_preview_like?.count,
-          commentsCount: postData.commentsCount || postData.comment_count || postData.edge_media_to_comment?.count,
-          // Inclure des informations sur le proxy utilisé pour le débogage
           extractionInfo: {
-            proxyCountry: proxy.countryCode || 'DATACENTER',
+            proxyCountry: proxy.countryCode || 'DATACENTER/SMART',
             attemptNumber: attempt + 1,
-            extractionTime: new Date().toISOString()
-          },
-          postData: {
-            id: postData.id,
-            caption,
-            timestamp,
-            ownerUsername: postData.ownerUsername || postData.owner?.username || postData.user?.username || '',
-            shortcode: postData.shortcode || postData.code,
+            extractionTime: new Date().toISOString(),
+            actorUsed: actorToUse,
+            apifyRunId: run.id
           }
         }
       };
     } catch (error) {
-      console.error(`Échec de la tentative ${attempt+1} avec proxy ${proxy.countryCode || 'DATACENTER/SMART'}:`, error.message);
+      console.error(`Échec de la tentative ${attempt + 1} avec proxy ${proxy.countryCode || 'DATACENTER/SMART'}:`, error.message);
       lastError = error;
-      
+
       // Mise à jour des statistiques - échec
       updateProxyStats(index, false);
-      
+
       // Si ce n'est pas la dernière tentative, continuer avec la prochaine configuration
       if (attempt < maxRetries - 1) {
         console.log(`Passage à la configuration de proxy suivante...`);
       }
     }
   }
-  
+
   // Si toutes les tentatives ont échoué, lancer la dernière erreur
   console.error(`Échec de l'extraction Instagram après ${maxRetries} tentatives avec différentes configurations de proxy`);
   throw new Error(`Impossible d'extraire la vidéo Instagram après plusieurs tentatives: ${lastError.message}`);
@@ -1052,56 +1030,4 @@ function getRandomHeaders(attempt: number = 0): Record<string, string> {
   }
   
   return baseHeaders;
-}
-
-/**
- * Extrait l'URL vidéo de la réponse du scraper Instagram
- */
-function extractVideoUrlFromPostData(postData: any): string | null {
-  let videoUrl = null;
-  
-  // 1. Vérifier les propriétés directes standard
-  if (postData.videoUrl || postData.video_url) {
-    videoUrl = postData.videoUrl || postData.video_url;
-    console.log('URL vidéo trouvée dans propriété directe:', videoUrl);
-  }
-  // 2. Vérifier dans les media video_versions (format API Instagram)
-  else if (postData.media && postData.media.video_versions && postData.media.video_versions.length > 0) {
-    // Prendre la version avec la meilleure résolution
-    videoUrl = postData.media.video_versions.sort((a, b) => b.width - a.width)[0].url;
-    console.log('URL vidéo trouvée dans media.video_versions:', videoUrl);
-  }
-  // 3. Vérifier dans l'array videos si disponible
-  else if (postData.videos && postData.videos.length > 0) {
-    const videoItem = postData.videos[0];
-    videoUrl = videoItem.url || videoItem.video_url;
-    console.log('URL vidéo trouvée dans videos array:', videoUrl);
-  }
-  // 4. Vérifier les médias carousel (Instagram reels/stories)
-  else if (postData.carousel_media || postData.carousel) {
-    const carouselMedia = postData.carousel_media || postData.carousel;
-    // Parcourir tous les médias du carousel à la recherche d'une vidéo
-    for (const media of carouselMedia) {
-      if (media.video_versions && media.video_versions.length > 0) {
-        videoUrl = media.video_versions.sort((a, b) => b.width - a.width)[0].url;
-        console.log('URL vidéo trouvée dans carousel_media:', videoUrl);
-        break;
-      }
-      if (media.videos && media.videos.length > 0) {
-        videoUrl = media.videos[0].url;
-        console.log('URL vidéo trouvée dans carousel_media.videos:', videoUrl);
-        break;
-      }
-    }
-  }
-  // 5. Recherche récursive en dernier recours
-  else {
-    console.log('Recherche récursive d\'URL vidéo dans les données Instagram...');
-    videoUrl = findVideoUrlRecursive(postData);
-    if (videoUrl) {
-      console.log('URL vidéo trouvée par recherche récursive:', videoUrl);
-    }
-  }
-  
-  return videoUrl;
 } 
