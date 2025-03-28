@@ -134,6 +134,13 @@ export default function VideoAdAnalysis() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [isDragging, setIsDragging] = useState(false);
 
+  // ---> NEW STATE FOR SCRIPT GENERATION <---
+  const [selectedPlatform, setSelectedPlatform] = useState<string>('General'); // Default platform
+  const [generatedScripts, setGeneratedScripts] = useState<string[] | null>(null);
+  const [isLoadingScripts, setIsLoadingScripts] = useState<boolean>(false);
+  const [scriptError, setScriptError] = useState<string | null>(null);
+  // ---> END NEW STATE <---
+
   // Mettre à jour la langue sélectionnée lorsque la transcription est disponible
   useEffect(() => {
     if (transcription && transcription.language) {
@@ -557,6 +564,67 @@ export default function VideoAdAnalysis() {
       };
     }
   }, []);
+
+  // ---> NEW FUNCTION FOR SCRIPT GENERATION <---
+  const handleGenerateScripts = async () => {
+    // Reset previous results/errors
+    setGeneratedScripts(null);
+    setScriptError(null);
+    setIsLoadingScripts(true);
+
+    // Get the text to use based on the selected language for transcription
+    const currentTranscriptionText = getDisplayText();
+
+    // Prepare the analysis text (assuming analysis structure has rawAnalysis or similar)
+    // Adjust this based on your actual analysis object structure if needed
+    const currentAnalysisText = typeof analysis?.rawAnalysis === 'string'
+      ? analysis.rawAnalysis
+      : JSON.stringify(analysis, null, 2); // Fallback to stringifying the object
+
+    if (!currentTranscriptionText || !currentAnalysisText) {
+      setScriptError("Original transcript and marketing analysis are required to generate scripts.");
+      setIsLoadingScripts(false);
+      return;
+    }
+
+    try {
+      console.log("Sending request to /api/generate-script with platform:", selectedPlatform);
+      const response = await fetch('/api/generate-script', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          original_transcript: currentTranscriptionText, // Use the potentially translated text
+          marketing_analysis: currentAnalysisText,    // Use the prepared analysis text
+          target_platform: selectedPlatform,
+          script_count: 2, // Requesting 2 scripts
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        // Throw an error with the message from the backend API if available
+        throw new Error(data.error || `API Error: ${response.status}`);
+      }
+
+      if (data.generated_scripts && Array.isArray(data.generated_scripts)) {
+          console.log("Received generated scripts:", data.generated_scripts);
+          setGeneratedScripts(data.generated_scripts);
+      } else {
+          console.error("API response did not contain expected 'generated_scripts' array:", data);
+          throw new Error("Invalid response format received from the server.");
+      }
+
+    } catch (error: any) {
+      console.error("Failed to generate scripts:", error);
+      setScriptError(error.message || "An unknown error occurred.");
+    } finally {
+      setIsLoadingScripts(false);
+    }
+  };
+  // ---> END NEW FUNCTION <---
 
   return (
     <div className="min-h-screen bg-white text-black">
@@ -1033,37 +1101,62 @@ export default function VideoAdAnalysis() {
             )}
 
             {isAnalysisDone && analysis && (
-              <Card className="bg-white border-gray-200 shadow-sm rounded-2xl overflow-hidden">
-                <CardHeader className="border-b border-gray-100 pb-4">
-                  <div className="flex items-center justify-between">
-                    <CardTitle className="flex items-center gap-2 text-black">AI Analysis</CardTitle>
-                    <Badge className="bg-gray-100 text-gray-800 border-gray-200 px-3 rounded-full">
-                      <CheckCircle2 className="h-3 w-3 mr-1" />
-                      Complete
-                    </Badge>
-                  </div>
-                  <CardDescription className="text-gray-500">
-                    Video content analysis
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="p-6">
-                  <div className="space-y-4">
-                    {analysis?.targetAudience && (
+              <>
+                <Card className="bg-white border-gray-200 shadow-sm rounded-2xl overflow-hidden">
+                  <CardHeader className="border-b border-gray-100 pb-4">
+                    <div className="flex items-center justify-between">
+                      <CardTitle className="flex items-center gap-2 text-black">AI Analysis</CardTitle>
+                      <Badge className="bg-gray-100 text-gray-800 border-gray-200 px-3 rounded-full">
+                        <CheckCircle2 className="h-3 w-3 mr-1" />
+                        Complete
+                      </Badge>
+                    </div>
+                    <CardDescription className="text-gray-500">
+                      Video content analysis
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="p-6">
+                    <div className="space-y-4">
+                      {analysis?.targetAudience && (
+                        <div className="bg-gray-50 rounded-md border border-gray-200 p-4">
+                          <h4 className="text-sm font-medium text-black mb-1">Target Audience</h4>
+                          <div className="flex items-center gap-2 mb-2">
+                            <div className="h-2 flex-1 bg-gray-200 rounded-full overflow-hidden">
+                              <div 
+                                className="h-full bg-black rounded-full" 
+                                style={{ width: `${analysis.targetAudience.score * 100}%` }}
+                              ></div>
+                            </div>
+                            <span className="text-xs font-mono text-gray-500">{Math.round(analysis.targetAudience.score * 100)}%</span>
+                          </div>
+                          {analysis.targetAudience.elements.length > 0 && (
+                            <div className="mt-0">
+                              <ul className="list-disc pl-5 text-sm text-gray-600 space-y-2">
+                                {getUniqueElements(analysis.targetAudience.elements).map((element, index) => (
+                                  <li key={index} className="prose prose-sm max-w-none" 
+                                      dangerouslySetInnerHTML={{ __html: formatHtmlContent(element) }} />
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
                       <div className="bg-gray-50 rounded-md border border-gray-200 p-4">
-                        <h4 className="text-sm font-medium text-black mb-1">Target Audience</h4>
+                        <h4 className="text-sm font-medium text-black mb-1">Message Clarity</h4>
                         <div className="flex items-center gap-2 mb-2">
                           <div className="h-2 flex-1 bg-gray-200 rounded-full overflow-hidden">
                             <div 
-                              className="h-full bg-black rounded-full" 
-                              style={{ width: `${analysis.targetAudience.score * 100}%` }}
+                              className="h-full bg-black rounded-full"
+                              style={{ width: `${analysis.narrativeStructure.score * 100}%` }}
                             ></div>
                           </div>
-                          <span className="text-xs font-mono text-gray-500">{Math.round(analysis.targetAudience.score * 100)}%</span>
+                          <span className="text-xs font-mono text-gray-500">{Math.round(analysis.narrativeStructure.score * 100)}%</span>
                         </div>
-                        {analysis.targetAudience.elements.length > 0 && (
+                        {analysis.narrativeStructure.elements.length > 0 && (
                           <div className="mt-0">
                             <ul className="list-disc pl-5 text-sm text-gray-600 space-y-2">
-                              {getUniqueElements(analysis.targetAudience.elements).map((element, index) => (
+                              {getUniqueElements(analysis.narrativeStructure.elements).map((element, index) => (
                                 <li key={index} className="prose prose-sm max-w-none" 
                                     dangerouslySetInnerHTML={{ __html: formatHtmlContent(element) }} />
                               ))}
@@ -1071,93 +1164,22 @@ export default function VideoAdAnalysis() {
                           </div>
                         )}
                       </div>
-                    )}
 
-                    <div className="bg-gray-50 rounded-md border border-gray-200 p-4">
-                      <h4 className="text-sm font-medium text-black mb-1">Message Clarity</h4>
-                      <div className="flex items-center gap-2 mb-2">
-                        <div className="h-2 flex-1 bg-gray-200 rounded-full overflow-hidden">
-                          <div 
-                            className="h-full bg-black rounded-full"
-                            style={{ width: `${analysis.narrativeStructure.score * 100}%` }}
-                          ></div>
-                        </div>
-                        <span className="text-xs font-mono text-gray-500">{Math.round(analysis.narrativeStructure.score * 100)}%</span>
-                      </div>
-                      {analysis.narrativeStructure.elements.length > 0 && (
-                        <div className="mt-0">
-                          <ul className="list-disc pl-5 text-sm text-gray-600 space-y-2">
-                            {getUniqueElements(analysis.narrativeStructure.elements).map((element, index) => (
-                              <li key={index} className="prose prose-sm max-w-none" 
-                                  dangerouslySetInnerHTML={{ __html: formatHtmlContent(element) }} />
-                            ))}
-                          </ul>
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="bg-gray-50 rounded-md border border-gray-200 p-4">
-                      <h4 className="text-sm font-medium text-black mb-1">Call to Action</h4>
-                      <div className="flex items-center gap-2 mb-2">
-                        <div className="h-2 flex-1 bg-gray-200 rounded-full overflow-hidden">
-                          <div 
-                            className="h-full bg-black rounded-full"
-                            style={{ width: `${analysis.callToAction.score * 100}%` }}
-                          ></div>
-                        </div>
-                        <span className="text-xs font-mono text-gray-500">{Math.round(analysis.callToAction.score * 100)}%</span>
-                      </div>
-                      {analysis.callToAction.elements.length > 0 && (
-                        <div className="mt-0">
-                          <ul className="list-disc pl-5 text-sm text-gray-600 space-y-2">
-                            {getUniqueElements(analysis.callToAction.elements).map((element, index) => (
-                              <li key={index} className="prose prose-sm max-w-none" 
-                                  dangerouslySetInnerHTML={{ __html: formatHtmlContent(element) }} />
-                            ))}
-                          </ul>
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="bg-gray-50 rounded-md border border-gray-200 p-4">
-                      <h4 className="text-sm font-medium text-black mb-1">Tone and Style</h4>
-                      <div className="flex items-center gap-2 mb-2">
-                        <div className="h-2 flex-1 bg-gray-200 rounded-full overflow-hidden">
-                          <div 
-                            className="h-full bg-black rounded-full" 
-                            style={{ width: `${analysis.storytelling.score * 100}%` }}
-                          ></div>
-                        </div>
-                        <span className="text-xs font-mono text-gray-500">{Math.round(analysis.storytelling.score * 100)}%</span>
-                      </div>
-                      {analysis.storytelling.elements.length > 0 && (
-                        <div className="mt-0">
-                          <ul className="list-disc pl-5 text-sm text-gray-600 space-y-2">
-                            {getUniqueElements(analysis.storytelling.elements).map((element, index) => (
-                              <li key={index} className="prose prose-sm max-w-none" 
-                                  dangerouslySetInnerHTML={{ __html: formatHtmlContent(element) }} />
-                            ))}
-                          </ul>
-                        </div>
-                      )}
-                    </div>
-
-                    {analysis?.emotionalTriggers && (
                       <div className="bg-gray-50 rounded-md border border-gray-200 p-4">
-                        <h4 className="text-sm font-medium text-black mb-1">Emotional Triggers</h4>
+                        <h4 className="text-sm font-medium text-black mb-1">Call to Action</h4>
                         <div className="flex items-center gap-2 mb-2">
                           <div className="h-2 flex-1 bg-gray-200 rounded-full overflow-hidden">
                             <div 
-                              className="h-full bg-black rounded-full" 
-                              style={{ width: `${analysis.emotionalTriggers.score * 100}%` }}
+                              className="h-full bg-black rounded-full"
+                              style={{ width: `${analysis.callToAction.score * 100}%` }}
                             ></div>
                           </div>
-                          <span className="text-xs font-mono text-gray-500">{Math.round(analysis.emotionalTriggers.score * 100)}%</span>
+                          <span className="text-xs font-mono text-gray-500">{Math.round(analysis.callToAction.score * 100)}%</span>
                         </div>
-                        {analysis.emotionalTriggers.elements.length > 0 && (
+                        {analysis.callToAction.elements.length > 0 && (
                           <div className="mt-0">
                             <ul className="list-disc pl-5 text-sm text-gray-600 space-y-2">
-                              {getUniqueElements(analysis.emotionalTriggers.elements).map((element, index) => (
+                              {getUniqueElements(analysis.callToAction.elements).map((element, index) => (
                                 <li key={index} className="prose prose-sm max-w-none" 
                                     dangerouslySetInnerHTML={{ __html: formatHtmlContent(element) }} />
                               ))}
@@ -1165,47 +1187,184 @@ export default function VideoAdAnalysis() {
                           </div>
                         )}
                       </div>
-                    )}
-                  </div>
 
-                  <div className="mt-6 flex flex-col sm:flex-row gap-3">
-                    <Button
-                      onClick={() => handleExport('pdf')}
-                      className="bg-black hover:bg-gray-900 text-white rounded-full flex-1"
-                      disabled={isPdfExporting}
-                    >
-                      {isPdfExporting ? (
-                        <>
-                          <span className="animate-spin h-4 w-4 mr-2 border-2 border-white border-t-transparent rounded-full" />
-                          Generating PDF...
-                        </>
-                      ) : (
-                        <>
-                          <Download className="h-4 w-4 mr-2" />
-                          Export as PDF
-                        </>
+                      <div className="bg-gray-50 rounded-md border border-gray-200 p-4">
+                        <h4 className="text-sm font-medium text-black mb-1">Tone and Style</h4>
+                        <div className="flex items-center gap-2 mb-2">
+                          <div className="h-2 flex-1 bg-gray-200 rounded-full overflow-hidden">
+                            <div 
+                              className="h-full bg-black rounded-full" 
+                              style={{ width: `${analysis.storytelling.score * 100}%` }}
+                            ></div>
+                          </div>
+                          <span className="text-xs font-mono text-gray-500">{Math.round(analysis.storytelling.score * 100)}%</span>
+                        </div>
+                        {analysis.storytelling.elements.length > 0 && (
+                          <div className="mt-0">
+                            <ul className="list-disc pl-5 text-sm text-gray-600 space-y-2">
+                              {getUniqueElements(analysis.storytelling.elements).map((element, index) => (
+                                <li key={index} className="prose prose-sm max-w-none" 
+                                    dangerouslySetInnerHTML={{ __html: formatHtmlContent(element) }} />
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                      </div>
+
+                      {analysis?.emotionalTriggers && (
+                        <div className="bg-gray-50 rounded-md border border-gray-200 p-4">
+                          <h4 className="text-sm font-medium text-black mb-1">Emotional Triggers</h4>
+                          <div className="flex items-center gap-2 mb-2">
+                            <div className="h-2 flex-1 bg-gray-200 rounded-full overflow-hidden">
+                              <div 
+                                className="h-full bg-black rounded-full" 
+                                style={{ width: `${analysis.emotionalTriggers.score * 100}%` }}
+                              ></div>
+                            </div>
+                            <span className="text-xs font-mono text-gray-500">{Math.round(analysis.emotionalTriggers.score * 100)}%</span>
+                          </div>
+                          {analysis.emotionalTriggers.elements.length > 0 && (
+                            <div className="mt-0">
+                              <ul className="list-disc pl-5 text-sm text-gray-600 space-y-2">
+                                {getUniqueElements(analysis.emotionalTriggers.elements).map((element, index) => (
+                                  <li key={index} className="prose prose-sm max-w-none" 
+                                      dangerouslySetInnerHTML={{ __html: formatHtmlContent(element) }} />
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                        </div>
                       )}
-                    </Button>
-                    <Button
-                      onClick={() => handleExport('gdocs')}
-                      className="bg-blue-600 hover:bg-blue-700 text-white rounded-full flex-1"
-                      disabled={isGdocsExporting}
-                    >
-                      {isGdocsExporting ? (
-                        <>
-                          <span className="animate-spin h-4 w-4 mr-2 border-2 border-white border-t-transparent rounded-full" />
-                          Exporting to Google Docs...
-                        </>
-                      ) : (
-                        <>
-                          <ExternalLink className="h-4 w-4 mr-2" />
-                          Export to Google Docs
-                        </>
-                      )}
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
+                    </div>
+
+                    <div className="mt-6 flex flex-col sm:flex-row gap-3">
+                      <Button
+                        onClick={() => handleExport('pdf')}
+                        className="bg-black hover:bg-gray-900 text-white rounded-full flex-1"
+                        disabled={isPdfExporting}
+                      >
+                        {isPdfExporting ? (
+                          <>
+                            <span className="animate-spin h-4 w-4 mr-2 border-2 border-white border-t-transparent rounded-full" />
+                            Generating PDF...
+                          </>
+                        ) : (
+                          <>
+                            <Download className="h-4 w-4 mr-2" />
+                            Export as PDF
+                          </>
+                        )}
+                      </Button>
+                      <Button
+                        onClick={() => handleExport('gdocs')}
+                        className="bg-blue-600 hover:bg-blue-700 text-white rounded-full flex-1"
+                        disabled={isGdocsExporting}
+                      >
+                        {isGdocsExporting ? (
+                          <>
+                            <span className="animate-spin h-4 w-4 mr-2 border-2 border-white border-t-transparent rounded-full" />
+                            Exporting to Google Docs...
+                          </>
+                        ) : (
+                          <>
+                            <ExternalLink className="h-4 w-4 mr-2" />
+                            Export to Google Docs
+                          </>
+                        )}
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* ---> Script Generation Card MOVED to LEFT COLUMN <--- */}
+                {/* It will only render when analysis is done, below the video preview (if present) */}
+                {isAnalysisDone && analysis && (
+                  <Card className="mt-8 bg-white border-gray-200 shadow-sm rounded-2xl overflow-hidden">
+                    <CardHeader className="border-b border-gray-100 pb-4">
+                      <CardTitle className="flex items-center gap-2 text-black">Script Generation</CardTitle>
+                      <CardDescription className="text-gray-500">
+                        Generate improved script suggestions based on the analysis.
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="p-6">
+                      {/* Platform Selector */}
+                      <div className="mb-4">
+                        <label htmlFor="platform-select" className="block text-sm font-medium text-gray-700 mb-1">
+                          Optimize for Platform:
+                        </label>
+                        <select
+                          id="platform-select"
+                          value={selectedPlatform}
+                          onChange={(e) => setSelectedPlatform(e.target.value)}
+                          className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-black focus:border-black sm:text-sm rounded-md bg-white text-black"
+                        >
+                          <option value="General">General Social Media</option>
+                          <option value="Instagram Reel">Instagram Reel</option>
+                          <option value="TikTok">TikTok</option>
+                          <option value="Facebook Feed">Facebook Feed</option>
+                        </select>
+                      </div>
+
+                      {/* Generate Button */}
+                      <Button
+                        onClick={handleGenerateScripts}
+                        disabled={isLoadingScripts}
+                        className={`inline-flex items-center px-4 py-2 mb-6 border border-transparent text-sm font-medium rounded-full shadow-sm text-white w-full ${ 
+                          isLoadingScripts
+                            ? 'bg-indigo-400 cursor-not-allowed'
+                            : 'bg-black hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-black'
+                        }`}
+                      >
+                        {isLoadingScripts ? (
+                          <>
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            Generating...
+                          </>
+                        ) : (
+                          'Generate Scripts'
+                        )}
+                      </Button>
+
+                      {/* Display Area */}
+                      <div> 
+                        {/* Loading Indicator */}
+                        {isLoadingScripts && (
+                          <div className="flex justify-center items-center p-4 text-gray-600">
+                            <Loader2 className="h-5 w-5 mr-2 animate-spin" />
+                            Generating scripts, please wait...
+                          </div>
+                        )}
+
+                        {/* Error Display */}
+                        {scriptError && (
+                          <div className="p-4 border border-red-300 bg-red-50 rounded-lg text-red-700 shadow-sm">
+                            <p className="font-semibold mb-1">Error Generating Scripts:</p>
+                            <p className="text-sm">{scriptError}</p>
+                          </div>
+                        )}
+
+                        {/* Generated Scripts Display */}
+                        {generatedScripts && generatedScripts.length > 0 && (
+                          <div className="space-y-4">
+                            <h4 className="text-lg font-semibold text-black">Generated Script Suggestions:</h4>
+                            {generatedScripts.map((script, index) => (
+                              <Card key={index} className="bg-white border-gray-200 shadow-sm rounded-lg overflow-hidden">
+                                <CardHeader className="bg-gray-50 p-3 border-b">
+                                  <CardTitle className="text-sm font-medium text-gray-800">Suggestion {index + 1}</CardTitle>
+                                </CardHeader>
+                                <CardContent className="p-4">
+                                  <pre className="whitespace-pre-wrap text-sm text-gray-700 font-sans">{script}</pre>
+                                </CardContent>
+                              </Card>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+                {/* ---> END MOVED Script Generation Card <--- */}
+              </>
             )}
           </div>
         </div>

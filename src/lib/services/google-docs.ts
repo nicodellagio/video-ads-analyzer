@@ -105,7 +105,11 @@ export async function createGoogleDoc(
     // Si les identifiants ne sont pas configurés ou si on utilise des jetons simulés
     if (!areCredentialsConfigured() || tokens.access_token === 'simulated_access_token') {
       console.warn('Mode simulation activé. Génération d\'un document HTML au lieu de Google Docs.');
-      return generateHtmlDocument(title, content);
+      return generateHtmlDocument(title, {
+        transcription: content.transcription,
+        analysis: content.analysis,
+        videoMetadata: content.videoMetadata
+      });
     }
     
     // Configurer le client avec les jetons
@@ -128,7 +132,11 @@ export async function createGoogleDoc(
     }
     
     // Préparer le contenu pour l'insertion
-    const requests = prepareContentRequests(content);
+    const requests = prepareContentRequests({
+      transcription: content.transcription,
+      analysis: content.analysis,
+      videoMetadata: content.videoMetadata
+    });
     
     // Insérer le contenu dans le document
     if (requests.length > 0) {
@@ -145,7 +153,11 @@ export async function createGoogleDoc(
   } catch (error) {
     console.error('Erreur lors de la création du document Google Docs:', error);
     // En cas d'erreur, générer un document HTML comme solution de secours
-    return generateHtmlDocument(title, content);
+    return generateHtmlDocument(title, {
+      transcription: content.transcription,
+      analysis: content.analysis,
+      videoMetadata: content.videoMetadata
+    });
   }
 }
 
@@ -173,7 +185,11 @@ async function createGoogleDocWithApiKey(title: string, content: any) {
     }
     
     // Préparer le contenu pour l'insertion
-    const requests = prepareContentRequests(content);
+    const requests = prepareContentRequests({
+      transcription: content.transcription,
+      analysis: content.analysis,
+      videoMetadata: content.videoMetadata
+    });
     
     // Insérer le contenu dans le document
     if (requests.length > 0) {
@@ -191,8 +207,134 @@ async function createGoogleDocWithApiKey(title: string, content: any) {
     console.error('Erreur lors de la création du document avec la clé API:', error);
     // Les clés API ne peuvent généralement pas être utilisées pour créer des documents,
     // donc nous générons un document HTML comme solution de secours
-    return generateHtmlDocument(title, content);
+    return generateHtmlDocument(title, {
+      transcription: content.transcription,
+      analysis: content.analysis,
+      videoMetadata: content.videoMetadata
+    });
   }
+}
+
+// Fonction pour générer le HTML des métadonnées
+function generateMetadataHtml(metadata: any) {
+  if (!metadata) return '';
+  
+  let html = `
+  <div class="metadata-section">
+    <h3>Métadonnées de la vidéo</h3>
+    <table class="metadata-table">
+      <tr>
+        <th>Attribut</th>
+        <th>Valeur</th>
+      </tr>`;
+  
+  // Ajouter les métadonnées de base
+  html += `
+      <tr>
+        <td>Durée</td>
+        <td>${metadata.duration || 'Non disponible'}</td>
+      </tr>
+      <tr>
+        <td>Format</td>
+        <td>${metadata.format || 'Non disponible'}</td>
+      </tr>
+      <tr>
+        <td>Taille</td>
+        <td>${metadata.size || 'Non disponible'}</td>
+      </tr>`;
+  
+  // Ajouter les métadonnées optionnelles
+  if (metadata.originalName) {
+    html += `
+      <tr>
+        <td>Titre original</td>
+        <td>${metadata.originalName}</td>
+      </tr>`;
+  }
+  
+  if (metadata.width && metadata.height) {
+    html += `
+      <tr>
+        <td>Résolution</td>
+        <td>${metadata.width}x${metadata.height}</td>
+      </tr>`;
+  }
+  
+  if (metadata.codec) {
+    html += `
+      <tr>
+        <td>Codec</td>
+        <td>${metadata.codec}</td>
+      </tr>`;
+  }
+  
+  if (metadata.bitrate) {
+    html += `
+      <tr>
+        <td>Bitrate</td>
+        <td>${metadata.bitrate} kbps</td>
+      </tr>`;
+  }
+  
+  html += `
+    </table>
+  </div>`;
+  
+  return html;
+}
+
+// Fonction pour générer le HTML d'analyse
+function generateAnalysisHtml(analysis: any) {
+  let html = '';
+  
+  const sections = [
+    { title: 'Narration and storytelling', data: analysis.storytelling },
+    { title: 'Call-to-Action', data: analysis.callToAction },
+    { title: 'Narrative structure', data: analysis.narrativeStructure }
+  ];
+  
+  if (analysis.targetAudience) {
+    sections.push({ title: 'Target audience', data: analysis.targetAudience });
+  }
+  
+  if (analysis.emotionalTriggers) {
+    sections.push({ title: 'Emotional triggers', data: analysis.emotionalTriggers });
+  }
+  
+  for (const section of sections) {
+    html += `
+    <div class="section">
+      <h3>${section.title}</h3>
+      <p>${section.data.description}</p>
+    `;
+    
+    // Vérifier si les éléments ne sont pas déjà inclus dans la description
+    if (section.data.elements && section.data.elements.length > 0) {
+      // Filtrer les éléments qui pourraient être des répétitions de la description
+      const description = section.data.description.toLowerCase();
+      const filteredElements = section.data.elements.filter(element => {
+        const cleanElement = element.replace(/<[^>]*>/g, '').toLowerCase();
+        // Ajouter l'élément uniquement s'il n'est pas déjà entièrement contenu dans la description
+        return !description.includes(cleanElement) && 
+               // Si l'élément est long, vérifier que le début n'est pas identique à la description
+               !(cleanElement.length > 20 && description.substring(0, 20) === cleanElement.substring(0, 20));
+      });
+      
+      if (filteredElements.length > 0) {
+        html += '<ul>';
+        for (const element of filteredElements) {
+          // Nettoyer le texte
+          const cleanElement = element.replace(/<[^>]*>/g, '');
+          html += `<li>${cleanElement}</li>`;
+        }
+        html += '</ul>';
+      }
+    }
+    
+    html += '</div>';
+  }
+  
+  return html;
 }
 
 // Fonction pour générer un document HTML comme solution de secours
@@ -234,10 +376,6 @@ function generateHtmlDocument(title: string, content: any) {
       color: #333;
       margin-top: 20px;
     }
-    .score {
-      color: #0066cc;
-      font-weight: bold;
-    }
     ul {
       margin-top: 10px;
     }
@@ -246,6 +384,25 @@ function generateHtmlDocument(title: string, content: any) {
     }
     .section {
       margin-bottom: 30px;
+    }
+    .metadata-section {
+      margin-bottom: 30px;
+    }
+    .metadata-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 10px;
+    }
+    .metadata-table th, .metadata-table td {
+      border: 1px solid #ddd;
+      padding: 8px;
+      text-align: left;
+    }
+    .metadata-table th {
+      background-color: #f2f2f2;
+    }
+    .metadata-table tr:nth-child(even) {
+      background-color: #f9f9f9;
     }
   </style>
 </head>
@@ -256,6 +413,11 @@ function generateHtmlDocument(title: string, content: any) {
     month: 'long', 
     day: 'numeric' 
   })}</div>
+  
+  ${content.videoMetadata ? `
+  <h2>Métadonnées</h2>
+  ${generateMetadataHtml(content.videoMetadata)}
+  ` : ''}
   
   <h2>Transcription</h2>
   <div class="section">
@@ -289,48 +451,6 @@ function getTranscriptionText(transcription: any) {
   
   // Formater avec des paragraphes
   return text.split('\n').map(paragraph => `<p>${paragraph}</p>`).join('');
-}
-
-// Fonction pour générer le HTML d'analyse
-function generateAnalysisHtml(analysis: any) {
-  let html = '';
-  
-  const sections = [
-    { title: 'Narration and storytelling', data: analysis.storytelling },
-    { title: 'Call-to-Action', data: analysis.callToAction },
-    { title: 'Narrative structure', data: analysis.narrativeStructure }
-  ];
-  
-  if (analysis.targetAudience) {
-    sections.push({ title: 'Target audience', data: analysis.targetAudience });
-  }
-  
-  if (analysis.emotionalTriggers) {
-    sections.push({ title: 'Emotional triggers', data: analysis.emotionalTriggers });
-  }
-  
-  for (const section of sections) {
-    html += `
-    <div class="section">
-      <h3>${section.title}</h3>
-      <p class="score">Score: ${section.data.score}/10</p>
-      <p>${section.data.description}</p>
-    `;
-    
-    if (section.data.elements && section.data.elements.length > 0) {
-      html += '<ul>';
-      for (const element of section.data.elements) {
-        // Nettoyer le texte
-        const cleanElement = element.replace(/<[^>]*>/g, '');
-        html += `<li>${cleanElement}</li>`;
-      }
-      html += '</ul>';
-    }
-    
-    html += '</div>';
-  }
-  
-  return html;
 }
 
 // Fonction pour préparer les requêtes de contenu
@@ -394,6 +514,87 @@ function prepareContentRequests(content: any) {
   
   // Index actuel pour l'insertion
   let currentIndex = 23 + `Généré le ${date}\n\n`.length;
+  
+  // Ajouter la section de métadonnées si disponible
+  if (content.videoMetadata) {
+    requests.push({
+      insertText: {
+        location: {
+          index: currentIndex
+        },
+        text: 'Métadonnées de la vidéo\n\n'
+      }
+    });
+    
+    // Mettre en forme le titre de section
+    requests.push({
+      updateParagraphStyle: {
+        range: {
+          startIndex: currentIndex,
+          endIndex: currentIndex + 'Métadonnées de la vidéo\n\n'.length
+        },
+        paragraphStyle: {
+          namedStyleType: 'HEADING_2'
+        },
+        fields: 'namedStyleType'
+      }
+    });
+    
+    currentIndex += 'Métadonnées de la vidéo\n\n'.length;
+    
+    // Ajouter une table de métadonnées
+    const metadataTable = [
+      ['Attribut', 'Valeur'],
+      ['Durée', content.videoMetadata.duration || 'Non disponible'],
+      ['Format', content.videoMetadata.format || 'Non disponible'],
+      ['Taille', content.videoMetadata.size || 'Non disponible']
+    ];
+    
+    // Ajouter des attributs optionnels
+    if (content.videoMetadata.originalName) {
+      metadataTable.push(['Titre original', content.videoMetadata.originalName]);
+    }
+    
+    if (content.videoMetadata.width && content.videoMetadata.height) {
+      metadataTable.push(['Résolution', `${content.videoMetadata.width}x${content.videoMetadata.height}`]);
+    }
+    
+    if (content.videoMetadata.codec) {
+      metadataTable.push(['Codec', content.videoMetadata.codec]);
+    }
+    
+    if (content.videoMetadata.bitrate) {
+      metadataTable.push(['Bitrate', `${content.videoMetadata.bitrate} kbps`]);
+    }
+    
+    // Créer une table
+    requests.push({
+      insertTable: {
+        location: {
+          index: currentIndex
+        },
+        rows: metadataTable.length,
+        columns: 2
+      }
+    });
+    
+    // Estimer l'index après la table
+    // Chaque cellule a un index de début et de fin, donc on multiplie par 2
+    // Puis on ajoute un peu plus pour être sûr
+    currentIndex += (metadataTable.length * 2 * 2) + 10;
+    
+    // Ajouter un peu d'espace après la table
+    requests.push({
+      insertText: {
+        location: {
+          index: currentIndex
+        },
+        text: '\n\n'
+      }
+    });
+    
+    currentIndex += 2;
+  }
   
   // Ajouter la section de transcription
   requests.push({
@@ -514,42 +715,6 @@ function prepareContentRequests(content: any) {
     
     currentIndex += section.title.length + 1;
     
-    // Score
-    const scoreText = `Score: ${section.data.score}/10\n`;
-    requests.push({
-      insertText: {
-        location: {
-          index: currentIndex
-        },
-        text: scoreText
-      }
-    });
-    
-    // Mettre en forme le score
-    requests.push({
-      updateTextStyle: {
-        range: {
-          startIndex: currentIndex,
-          endIndex: currentIndex + scoreText.length
-        },
-        textStyle: {
-          foregroundColor: {
-            color: {
-              rgbColor: {
-                blue: 0.8,
-                red: 0,
-                green: 0.4
-              }
-            }
-          },
-          bold: true
-        },
-        fields: 'foregroundColor,bold'
-      }
-    });
-    
-    currentIndex += scoreText.length;
-    
     // Description
     const descriptionText = section.data.description + '\n\n';
     requests.push({
@@ -563,9 +728,19 @@ function prepareContentRequests(content: any) {
     
     currentIndex += descriptionText.length;
     
-    // Éléments
+    // Éléments - Filtrer pour éviter les répétitions avec la description
     if (section.data.elements && section.data.elements.length > 0) {
-      for (const element of section.data.elements) {
+      // Filtrer les éléments qui pourraient être des répétitions de la description
+      const description = section.data.description.toLowerCase();
+      const filteredElements = section.data.elements.filter(element => {
+        const cleanElement = element.replace(/<[^>]*>/g, '').toLowerCase();
+        // Ajouter l'élément uniquement s'il n'est pas déjà entièrement contenu dans la description
+        return !description.includes(cleanElement) && 
+               // Si l'élément est long, vérifier que le début n'est pas identique à la description
+               !(cleanElement.length > 20 && description.substring(0, 20) === cleanElement.substring(0, 20));
+      });
+      
+      for (const element of filteredElements) {
         // Nettoyer le texte
         const cleanElement = element.replace(/<[^>]*>/g, '');
         const bulletPoint = `• ${cleanElement}\n`;
@@ -599,17 +774,19 @@ function prepareContentRequests(content: any) {
         currentIndex += bulletPoint.length;
       }
       
-      // Ajouter un saut de ligne après les éléments
-      requests.push({
-        insertText: {
-          location: {
-            index: currentIndex
-          },
-          text: '\n'
-        }
-      });
-      
-      currentIndex += 1;
+      // Ajouter un saut de ligne après les éléments seulement s'il y a des éléments filtrés
+      if (filteredElements.length > 0) {
+        requests.push({
+          insertText: {
+            location: {
+              index: currentIndex
+            },
+            text: '\n'
+          }
+        });
+        
+        currentIndex += 1;
+      }
     }
   }
   

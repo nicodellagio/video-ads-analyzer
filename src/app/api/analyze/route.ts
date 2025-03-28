@@ -294,50 +294,133 @@ function formatSectionForDisplay(text: string): string {
 function calculateScore(sectionText: string): number {
   if (!sectionText) return 0;
   
-  // Rechercher des mots-clés positifs et négatifs
+  // Rechercher des mots-clés positifs et négatifs avec leur poids
   const positiveKeywords = [
-    'excellent', 'efficace', 'clair', 'fort', 'puissant', 'convaincant',
-    'persuasif', 'engageant', 'mémorable', 'impactant', 'réussi', 'bien',
-    'effective', 'clear', 'strong', 'powerful', 'compelling', 'persuasive',
-    'engaging', 'memorable', 'impactful', 'successful', 'good', 'great'
+    { term: 'excellent', weight: 1.5 },
+    { term: 'efficace', weight: 1.2 },
+    { term: 'clair', weight: 1.0 },
+    { term: 'fort', weight: 1.0 },
+    { term: 'puissant', weight: 1.2 },
+    { term: 'convaincant', weight: 1.3 },
+    { term: 'persuasif', weight: 1.3 },
+    { term: 'engageant', weight: 1.1 },
+    { term: 'mémorable', weight: 1.2 },
+    { term: 'impactant', weight: 1.3 },
+    { term: 'réussi', weight: 1.2 },
+    { term: 'bien', weight: 0.8 },
+    { term: 'effective', weight: 1.2 },
+    { term: 'clear', weight: 1.0 },
+    { term: 'strong', weight: 1.0 },
+    { term: 'powerful', weight: 1.2 },
+    { term: 'compelling', weight: 1.3 },
+    { term: 'persuasive', weight: 1.3 },
+    { term: 'engaging', weight: 1.1 },
+    { term: 'memorable', weight: 1.2 },
+    { term: 'impactful', weight: 1.3 },
+    { term: 'successful', weight: 1.2 },
+    { term: 'good', weight: 0.8 },
+    { term: 'great', weight: 1.0 },
+    { term: 'parfait', weight: 1.5 },
+    { term: 'optimal', weight: 1.3 },
+    { term: 'cohérent', weight: 1.1 },
+    { term: 'pertinent', weight: 1.1 },
+    { term: 'bien ciblé', weight: 1.2 },
+    { term: 'précis', weight: 1.1 },
+    { term: 'direct', weight: 1.0 }
   ];
   
   const negativeKeywords = [
-    'faible', 'confus', 'vague', 'inefficace', 'peu clair', 'manque',
-    'pourrait être amélioré', 'limité', 'weak', 'confusing', 'vague',
-    'ineffective', 'unclear', 'lacks', 'could be improved', 'limited'
+    { term: 'faible', weight: 1.3 },
+    { term: 'confus', weight: 1.2 },
+    { term: 'vague', weight: 1.1 },
+    { term: 'inefficace', weight: 1.3 },
+    { term: 'peu clair', weight: 1.2 },
+    { term: 'manque', weight: 1.0 },
+    { term: 'pourrait être amélioré', weight: 0.8 },
+    { term: 'limité', weight: 1.0 },
+    { term: 'weak', weight: 1.3 },
+    { term: 'confusing', weight: 1.2 },
+    { term: 'ineffective', weight: 1.3 },
+    { term: 'unclear', weight: 1.2 },
+    { term: 'lacks', weight: 1.0 },
+    { term: 'could be improved', weight: 0.8 },
+    { term: 'limited', weight: 1.0 },
+    { term: 'insuffisant', weight: 1.2 },
+    { term: 'ambigu', weight: 1.1 },
+    { term: 'mal défini', weight: 1.2 },
+    { term: 'mal ciblé', weight: 1.2 },
+    { term: 'générique', weight: 0.9 },
+    { term: 'incomplet', weight: 1.1 }
+  ];
+
+  // Détecter les phrases négatives qui renversent le sens (négation)
+  const negationPhrases = [
+    'n\'est pas', 'ne sont pas', 'n\'a pas', 'n\'ont pas',
+    'is not', 'are not', 'does not', 'do not', 'doesn\'t', 'don\'t',
+    'lacks', 'missing', 'absence of', 'without', 'manque de', 'sans'
   ];
   
-  // Compter les occurrences
-  let positiveCount = 0;
-  let negativeCount = 0;
+  // Compter les occurrences avec poids et contexte
+  let positiveScore = 0;
+  let negativeScore = 0;
+  
+  // Fonction pour vérifier si un mot est dans un contexte de négation
+  const isInNegationContext = (text: string, position: number): boolean => {
+    // Vérifier les 6 mots avant le mot-clé pour des négations
+    const beforeContext = text.substring(Math.max(0, position - 50), position).toLowerCase();
+    return negationPhrases.some(phrase => beforeContext.includes(phrase));
+  };
   
   for (const keyword of positiveKeywords) {
-    const regex = new RegExp(`\\b${keyword}\\b`, 'gi');
-    const matches = sectionText.match(regex);
-    if (matches) {
-      positiveCount += matches.length;
+    const regex = new RegExp(`\\b${keyword.term}\\b`, 'gi');
+    let match;
+    
+    while ((match = regex.exec(sectionText)) !== null) {
+      // Vérifier si le mot est dans un contexte négatif
+      if (isInNegationContext(sectionText, match.index)) {
+        negativeScore += keyword.weight; // Inverser le sens si négation
+      } else {
+        positiveScore += keyword.weight;
+      }
     }
   }
   
   for (const keyword of negativeKeywords) {
-    const regex = new RegExp(`\\b${keyword}\\b`, 'gi');
-    const matches = sectionText.match(regex);
-    if (matches) {
-      negativeCount += matches.length;
+    const regex = new RegExp(`\\b${keyword.term}\\b`, 'gi');
+    let match;
+    
+    while ((match = regex.exec(sectionText)) !== null) {
+      // Vérifier si le mot est dans un contexte négatif
+      if (isInNegationContext(sectionText, match.index)) {
+        positiveScore += keyword.weight * 0.8; // Inverser le sens si négation, avec réduction
+      } else {
+        negativeScore += keyword.weight;
+      }
     }
   }
   
-  // Calculer le score (base 5 avec ajustement selon les mots-clés)
-  let baseScore = 3; // Score moyen par défaut
+  // Longueur du texte pour normalisation
+  const textLength = sectionText.split(/\s+/).length;
+  const contentFactor = Math.min(1, Math.max(0.5, textLength / 100)); // Plus de contenu = plus fiable
   
-  // Ajuster en fonction des mots-clés trouvés
-  if (positiveCount > negativeCount) {
-    baseScore += Math.min(2, (positiveCount - negativeCount) * 0.5);
-  } else if (negativeCount > positiveCount) {
-    baseScore -= Math.min(2, (negativeCount - positiveCount) * 0.5);
+  // Calculer le score (base 0.5 avec échelle mobile pour plus de granularité)
+  let baseScore = 0.5; // Point milieu de l'échelle 0-1
+  
+  // Calculer le score net et l'ajuster avec le facteur de contenu
+  const netScore = positiveScore - negativeScore;
+  const adjustedNetScore = netScore * contentFactor;
+  
+  // Transformer le score net en score sur une échelle de 0 à 1
+  if (adjustedNetScore > 0) {
+    // Formule pour scores positifs: 0.5 + (netScore * facteur_échelle)
+    // avec un plafond à 1.0
+    baseScore = Math.min(1.0, 0.5 + (adjustedNetScore * 0.05));
+  } else if (adjustedNetScore < 0) {
+    // Formule pour scores négatifs: 0.5 - (netScore * facteur_échelle)
+    // avec un plancher à 0.0
+    baseScore = Math.max(0.0, 0.5 + (adjustedNetScore * 0.05));
   }
   
-  // Arrondir à une décimale
-  return Math.round(baseScore * 10) / 10;
+  // Arrondir à deux décimales pour plus de précision
+  return Math.round(baseScore * 100) / 100;
 } 

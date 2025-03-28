@@ -347,7 +347,7 @@ export const AnalyzerProvider: React.FC<{ children: ReactNode }> = ({ children }
     
     try {
       setError(null);
-      const exportResult = await exportReport(transcription, analysis, format);
+      const exportResult = await exportReport(transcription, analysis, format, videoMetadata);
       
       if (exportResult.needsAuth) {
         // Si l'authentification est nécessaire, retourner l'objet complet
